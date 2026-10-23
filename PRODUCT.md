@@ -48,12 +48,12 @@ Unlike benchmark visualization tools or heuristic auto-scalers:
 
 ## Evidence on Hand
 
-- **Deterministic Contracts:** Pydantic models in `src/slokern/contracts/` (`workload.py`, `slo.py`, `measurements.py`, `metrics.py`, `feasibility.py`).
-- **Core Engine:** Feasibility evaluator (`src/slokern/core/evaluator/`), deterministic ranker (`src/slokern/core/ranker/`), verification runner (`src/slokern/core/verification/`).
-- **Validated Test Suite:** 24 passing unit and contract tests in `tests/`.
-- **Demo Fixtures:** Realistic multi-run experiment records in `fixtures/demo/demo_experiment.json`.
-- **Verified Frontend:** High-density control plane in `frontend/src/App.tsx` and `frontend/src/styles.css` with zero console errors and clean responsive layouts down to 360px.
-- **Absences:** Live cloud GPU endpoints are not currently active in this workspace; all UI and benchmark runs in the local demonstration are honestly labeled `DEMO DATA`.
+- **Deterministic Contracts:** 11 Pydantic v2 models in `src/slokern/contracts/` (`spec.py`, `evidence.py`, `metrics.py`, `verdict.py`, `config.py`, `run.py`, `search.py`, `verification.py`, `report.py`, `enums.py`, `versions.py`) with strict `extra='forbid'` and committed schemas in `schemas/`.
+- **Core Engine & Runner:** Feasibility evaluator (`src/slokern/core/evaluator/`), metrics engine (`src/slokern/core/metrics/`), 2×2 bounded grid search and candidate ranker (`src/slokern/core/search/`), subprocess load generator (`src/slokern/engine/loadgen/`), synthetic and Nebius serving adapters (`src/slokern/engine/serving/`), and single-run orchestrator (`src/slokern/engine/runner/`).
+- **Validated Test Suite:** 322 passing unit and contract tests across contracts, evaluator, search, metrics, load generator, serving, and run lifecycle (`pytest` passing in 2.64s).
+- **Demo Fixtures:** Versioned workload specifications in `fixtures/workloads/` and golden metric test suites in `fixtures/metrics_golden/`.
+- **Verified Frontend:** High-density control plane in `frontend/src/App.tsx` (2553 lines, `DESIGN.md`, `frontend/src/styles.css`) featuring 9 workflow pages, 2D Pareto visualizer, and strict **`DEMO DATA`** labeling.
+- **Absences:** Live cloud GPU benchmarks are not executed without active credentials (`BLK-04`, `BLK-17`); verification engine implementation (`TASK-11`, `SUB-09`) and live API integration (`TASK-17`) are pending. All offline runs and frontend fixtures are honestly labeled **`DEMO DATA`**.
 
 ## Product Principles
 

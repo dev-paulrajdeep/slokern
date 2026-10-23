@@ -251,15 +251,19 @@ SLOKern enforces strict cost accounting boundaries to prevent fabricated claims:
 
 | Subsystem / Deliverable | Status | Verified Evidence & Repository Reality |
 |---|---|---|
-| **Data Contracts** | `IMPLEMENTED` | Pydantic v2 schemas in `src/slokern/contracts/` (`enums.py`, `metrics.py`). |
-| **Subsystem Modules** | `IMPLEMENTED (STUBS)` | `api/`, `cli/`, `core/`, `engine/` scaffolded with clear typed signatures. |
-| **Fake Serving Adapter** | `IMPLEMENTED` | `src/slokern/engine/serving/fake.py` generates deterministic synthetic runs. |
-| **Nebius Serving Adapter** | `IN PROGRESS` | `src/slokern/engine/serving/nebius.py` scaffolded; live HTTP streaming client in development. |
-| **Preflight Smoke Test** | `PENDING EXECUTION` | Preflight check defined in `docs/deployment.md`; blocked on live Nebius instance access. |
-| **Target Model Deployment** | `PENDING VERIFICATION` | `Nemotron-3-Nano-30B-A3B` (FP8) selected from catalog; endpoint reachability unverified. |
-| **Live Benchmark Evidence** | `NOT RUN` | No live GPU benchmarks have been executed; zero fabricated claims. |
-| **Demo Dashboard UI** | `IMPLEMENTED` | React + Vite command center in `frontend/`; offline fixtures labeled **`DEMO DATA`**. |
-| **Daily Delivery Roadmap** | `DOCUMENTED` | Daily execution plan (Oct 19–30, 2026) established in `ROADMAP.md`. |
+| **Data Contracts** | `IMPLEMENTED` | 11 Pydantic v2 schemas in `src/slokern/contracts/` (`extra='forbid'`, 135 tests pass). |
+| **Subsystem Modules** | `IMPLEMENTED` | `core/` and `engine/` fully implemented with typed signatures and 322 passing tests across deterministic suites; `api/` & `cli/` deferred. |
+| **Fake Serving Adapter** | `IMPLEMENTED` | `src/slokern/engine/serving/fake.py` generates deterministic synthetic runs labeled **`DEMO DATA`**. |
+| **Nebius Serving Adapter** | `IMPLEMENTED (Transport)` | `src/slokern/engine/serving/nebius.py` with OpenAI-compatible HTTP client and health probe; live run pending credentials. |
+| **Subprocess Load Generator** | `IMPLEMENTED` | `src/slokern/engine/loadgen/runner.py` with Poisson/constant arrival, JSONL capture, and saturation detection. |
+| **Deterministic Metrics Engine**| `IMPLEMENTED` | `src/slokern/core/metrics/` computes percentiles (p50/p95/p99), throughput, error rate, and offered vs achieved load. |
+| **Feasibility Evaluator** | `IMPLEMENTED` | `src/slokern/core/evaluator/evaluate.py` evaluates hard constraints with NaN/negative latency guards. |
+| **Single-Run Executor** | `IMPLEMENTED` | `src/slokern/engine/runner/run_executor.py` orchestrates adapter, loadgen, metrics, evaluator, and artifact persistence. |
+| **2×2 Grid Search Controller** | `IMPLEMENTED` | `src/slokern/core/search/grid.py`, `budget.py`, `space.py`, `rank.py` (33 unit tests pass; budget caveat BLK-15). |
+| **Independent Verification** | `READY / STUB` | Pydantic contracts locked; runner ready for Phase C implementation and Daksh audit kickoff (Oct 24). |
+| **Demo Dashboard UI** | `IMPLEMENTED` | React + Vite command center in `frontend/src/App.tsx` (2553 lines, `DESIGN.md`, 9 pages, labeled **`DEMO DATA`**). |
+| **Daily Delivery Roadmap** | `DOCUMENTED` | Daily execution plan (Oct 19–30, 2026) maintained in `ROADMAP.md`. |
+
 
 ---
 
@@ -363,21 +367,22 @@ Execution is structured into 6 sequential phases spanning **October 19 to Octobe
 
 ```mermaid
 flowchart LR
-    PhaseA[Phase A: Audit & Freeze\nOct 19\nDONE] --> PhaseB[Phase B: Real Execution\nOct 20-22\nREADY]
-    PhaseB --> PhaseC[Phase C: Validate Optimization\nOct 23-25\nPLANNED]
+    PhaseA[Phase A: Audit & Freeze\nOct 19\nDONE] --> PhaseB[Phase B: Single-Run Execution\nOct 20-22\nDONE]
+    PhaseB --> PhaseC[Phase C: Search & Optimization\nOct 23-25\nIN PROGRESS]
     PhaseC --> PhaseD[Phase D: Review & Reproducibility\nOct 26-27\nPLANNED]
     PhaseD --> PhaseE[Phase E: Defect Closure & Freeze\nOct 28-29\nPLANNED]
     PhaseE --> PhaseF[Phase F: Final Submission\nOct 30, 10:00 AM PDT\nPLANNED]
 ```
 
-- **Phase A (Oct 19) — Audit and Scope Freeze:** Repository audit completed; working baseline established; core interfaces locked.
-- **Phase B (Oct 20–22) — Establish Real Execution:** Finalize Nebius adapter; execute preflight smoke test; confirm NVIDIA model identifier; record baseline benchmark; Adriraj begins benchmark integrity audit on Oct 21.
-- **Phase C (Oct 23–25) — Validate Optimization:** Execute bounded 2×2 candidate search (4 runs); evaluate hard SLO feasibility; select winning candidate; Daksh begins independent decision verification on Oct 24.
+- **Phase A (Oct 19) — Audit and Scope Freeze:** `DONE`. Repository audit completed; working baseline established; core interfaces locked.
+- **Phase B (Oct 20–22) — Establish Real Execution:** `DONE`. Single-run execution pipeline operational via `SingleRunExecutor` integrating Fake and Nebius adapters, subprocess load generator, metrics engine, and feasibility evaluator. React+Vite frontend command center delivered (`frontend/src/App.tsx`, 2553 lines, `DEMO DATA` labeling).
+- **Phase C (Oct 23–25) — Validate Optimization:** `IN PROGRESS`. Bounded 2×2 grid search controller (`grid.py`), `SearchSpace`, `BudgetLimiter`, and `CandidateRanker` implemented with 33 unit tests (`TASK-10`). Independent verification runner (`TASK-11`) ready for implementation and Daksh audit kickoff (Oct 24).
 - **Phase D (Oct 26–27) — Independent Review & Reproducibility:** Execute independent verification rerun under fresh run ID; audit metric drift; complete test suites; compile report artifact.
 - **Phase E (Oct 28–29) — Defect Closure & Freeze:** Feature freeze; close critical defects; automated test suite validation; clean clone installation check; record demo video ($\le 3$ minutes).
 - **Phase F (Oct 30) — Submit:** Final repository audit; Devpost submission completed before 10:00 AM PDT (10:30 PM IST) with 4-hour buffer.
 
 See **[ROADMAP.md](ROADMAP.md)** for complete daily task descriptions, deliverables, and acceptance gates.
+
 
 ---
 

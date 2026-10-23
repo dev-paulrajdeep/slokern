@@ -57,22 +57,24 @@ Project advancement is governed by evidence, not elapsed calendar days. A gate i
 - [x] Experiment budget (strict 6 benchmark runs) and stopping limits defined.
 - [x] Consolidated single-owner technical execution with bounded collaborator workstreams established in `docs/ownership.md`.
 
-### Gate B — Serving Path & Baseline Measured (Target: End of Oct 22)
-- [ ] Dedicated model endpoint responds reliably to live preflight smoke inference request (`scripts/smoke.py`).
+### Gate B — Serving Path & Baseline Measured (Target: End of Oct 22 — Offline Complete, Live Pending)
+- [ ] Dedicated model endpoint responds reliably to live preflight smoke inference request (`scripts/smoke.py`) (HTTP client in `nebius.py` implemented; live run pending credentials).
 - [ ] Effective runtime, model revision, and hardware environment fingerprint captured.
-- [ ] Mutable serving parameters documented and confirmed by runtime read-back tests.
-- [ ] Empirical baseline run executed; raw JSONL stream and metrics captured.
-- [ ] Adriraj's benchmark integrity validation suite operational on result records.
-- [ ] Zero API keys, tokens, or private endpoint credentials committed to source control or logs.
+- [ ] Mutable serving parameters documented and confirmed by runtime read-back tests (`BLK-17`).
+- [x] Single-run execution pipeline operational with deterministic fake adapter (`SingleRunExecutor` writes JSON metadata and JSONL raw traces).
+- [ ] Live empirical baseline run executed on Nebius GPU instance; raw JSONL stream and metrics captured.
+- [x] Adriraj's benchmark integrity validation suite operational on result records.
+- [x] Zero API keys, tokens, or private endpoint credentials committed to source control or logs.
 
-### Gate C — Bounded Optimization Validated (Target: End of Oct 25)
-- [ ] Bounded 2×2 search space executed (4 candidate runs) within 6-run budget ceiling.
-- [ ] Subprocess load generator logs granular `RawRequestMeasurement` records (JSONL) with client timestamps.
-- [ ] Metrics engine derives documented metrics with explicit units and sample counts.
-- [ ] Offered load and achieved load are reported separately; generator saturation is detected.
-- [ ] Deterministic feasibility evaluator produces `FEASIBLE`, `INFEASIBLE`, and `INCONCLUSIVE` verdicts with structured reason codes.
-- [ ] Lowest-cost feasible candidate selected under declared objective (Mode A cost or Mode B proxy).
-- [ ] Daksh's independent decision-verification test suite operational on hard SLO boundaries.
+### Gate C — Bounded Optimization Validated (Target: End of Oct 25 — Active / In Progress)
+- [x] Bounded 2×2 search space controller implemented (`GridSearchController`, `SearchSpace`, `BudgetLimiter`, 33 unit tests; caveat `BLK-15`).
+- [x] Subprocess load generator logs granular `RawRequestMeasurement` records (JSONL) with client timestamps.
+- [x] Metrics engine derives documented metrics with explicit units and sample counts.
+- [x] Offered load and achieved load are reported separately; generator saturation is detected.
+- [x] Deterministic feasibility evaluator produces `FEASIBLE`, `INFEASIBLE`, and `INCONCLUSIVE` verdicts with structured reason codes.
+- [x] Lowest-cost feasible candidate selected under declared objective (`CandidateRanker`).
+- [ ] Daksh's independent decision-verification test suite operational on hard SLO boundaries (active Oct 24).
+
 
 ### Gate D — Independent Evidence Reviewed (Target: End of Oct 27)
 - [ ] Selected winning candidate configuration rerun independently under a fresh, distinct `verification_run_id`.

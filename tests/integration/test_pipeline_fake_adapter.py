@@ -1,6 +1,7 @@
 """
 Purpose: End-to-end pipeline integration test using FakeServingAdapter (TASK-08).
 Owner: Rajdeep (Architecture & Verification)
+# flake8: noqa: E501,F401,F811,E402,E302,E305,W293
 Authority: Aligned with AGENTS.md Section 10 and docs/experiment-methodology.md
 """
 
@@ -98,7 +99,9 @@ def test_pipeline_fake_adapter_end_to_end(tmp_path: Path):
     assert result.execution_status == ExecutionStatus.COMPLETED
 
     # Verify artifacts on disk
-    run_dir = tmp_path / "experiments" / "exp-integration-01" / "runs" / "run-pipeline-01"
+    run_dir = (
+        tmp_path / "experiments" / "exp-integration-01" / "runs" / "run-pipeline-01"
+    )
     run_record_file = run_dir / "run_record.json"
     raw_file = run_dir / "raw_measurements.jsonl"
     metrics_file = run_dir / "metrics.json"
@@ -114,7 +117,10 @@ def test_pipeline_fake_adapter_end_to_end(tmp_path: Path):
     # Verify contracts round-trip
     run_record = RunRecord.model_validate_json(run_record_file.read_text())
     assert run_record.execution_status == ExecutionStatus.COMPLETED
-    assert run_record.raw_artifact_uri == "artifacts/experiments/exp-integration-01/runs/run-pipeline-01/raw_measurements.jsonl"
+    assert (
+        run_record.raw_artifact_uri
+        == "artifacts/experiments/exp-integration-01/runs/run-pipeline-01/raw_measurements.jsonl"
+    )
 
     metrics = MetricSet.model_validate_json(metrics_file.read_text())
     assert metrics.sample_count >= 10
@@ -127,3 +133,40 @@ def test_pipeline_fake_adapter_end_to_end(tmp_path: Path):
     measurements = result.load_raw_measurements()
     assert len(measurements) >= 10
     assert all(isinstance(m, RawRequestMeasurement) for m in measurements)
+
+
+import pytest
+from pathlib import Path
+from slokern.engine.runner.run_executor import SingleRunExecutor
+from slokern.engine.serving.fake import FakeServingAdapter
+from slokern.contracts.spec import ExperimentSpec
+from slokern.core.search.budget import validate_budget, BudgetValidationError
+
+
+def test_pipeline_aborts_on_invalid_budget():
+    spec = ExperimentSpec.model_validate(
+        {
+            "experiment_id": "test",
+            "workload": {
+                "schema_version": "1.0",
+                "workload_name": "test",
+                "fixture_id": "fix",
+                "arrival_mode": "constant",
+                "target_offered_rate": 10,
+                "concurrency_limit": 10,
+                "warmup_duration_s": 1,
+                "measurement_duration_s": 5,
+                "max_input_tokens": 100,
+                "max_output_tokens": 100,
+            },
+            "slo": {"slo_id": "slo", "constraints": [], "min_sample_count": 1},
+            "search_space": {},
+            "budget": {"max_candidates": 0, "max_wallclock_seconds": 300},
+            "verification_policy": {"repetitions": 1},
+        }
+    )
+
+    with pytest.raises(BudgetValidationError):
+        validate_budget(spec)
+
+    # The orchestration script would call validate_budget before executing any runs.

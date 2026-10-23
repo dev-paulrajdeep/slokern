@@ -71,18 +71,18 @@
 
 ## 2. Subsystem Summary Table
 
-> **Reconciled Status (2026-10-22):** Synchronized with verified test execution (333 total tests collected; 299 deterministic offline tests passed locally in 6.55s, 33 asyncio-dependent tests validated for Linux CI, 1 live endpoint test deselected offline). `SUB-02` (Contracts), `SUB-03` (Evaluator), `SUB-04` (Ranking/Candidate ID), `SUB-05` (Fake Serving Adapter), `SUB-06` (Subprocess Load Generator), `SUB-07` (Metrics Engine), and `SUB-08` (Single-Run Pipeline Orchestrator) are fully implemented with passing unit, integration, and contract tests. Redundant root-level prototypes removed; Daksh scope isolated to `tests/contract/test_verification_independence.py`. Unblocks `TASK-09` (Nebius Live Probe) and `TASK-10` (2×2 Search Controller).
+> **Reconciled Status (2026-10-23 audit):** Current audit collected 356 tests; the targeted requested subset passed (242 passed), contract generation, compileall, and pip check passed; live smoke skipped because `NEBIUS_API_KEY` was unset. The full non-live suite was interrupted without a summary and is not verified. `SUB-04` is partial pending strict budget configuration enforcement and ranking metric/policy fixes (`BLK-15`, `BLK-16`). `SUB-05` has a working urllib transport and offline tests, but engine-control application/read-back and live inference remain unverified (`BLK-04`, `BLK-17`). Historical test totals remain in prior records and are not current audit evidence.
 
 | ID | Subsystem | Implementation | Verification | Flags | Owner | Blocked-by |
 |---|---|---|---|---|---|---|
 | **SUB-01** | Architecture & Scope Governance | `IMPLEMENTED` | `STATIC` | `NONE` | Rajdeep (CONFIRMED) | None |
 | **SUB-02** | Shared Contracts & Schema Registry | `IMPLEMENTED` | `UNIT` | `NONE` | Rajdeep (CONFIRMED) | None |
 | **SUB-03** | Feasibility Evaluator Core | `IMPLEMENTED` | `UNIT` | `NONE` | Rajdeep (CONFIRMED) | None |
-| **SUB-04** | Candidate Identity & Deterministic Ranking | `IMPLEMENTED` | `UNIT` | `NONE` | Rajdeep (INTERIM) | None |
-| **SUB-05** | Serving Adapter & Runtime Infrastructure | `IMPLEMENTED (Fake) / PARTIAL (Live)` | `INTEGRATION` | `BLOCKED(by=BLK-04)` | Rajdeep (INTERIM) | BLK-04 |
+| **SUB-04** | Candidate Identity, Search Space & Ranking | `PARTIAL` | `UNIT` | `BLOCKED` | Rajdeep (CONFIRMED) | BLK-15, BLK-16 |
+| **SUB-05** | Serving Adapter & Runtime Infrastructure | `PARTIAL (Fake + Nebius transport)` | `UNIT; LIVE NOT RUN` | `BLOCKED` | Rajdeep (CONFIRMED) | BLK-04, BLK-17 |
 | **SUB-06** | Subprocess Load Generator & Workload Fixtures | `IMPLEMENTED` | `UNIT` | `NONE` | Rajdeep (CONFIRMED) | None |
 | **SUB-07** | Metrics Engine Core | `IMPLEMENTED` | `UNIT` | `NONE` | Rajdeep (CONFIRMED) | None |
-| **SUB-08** | Experiment Orchestration & Run Lifecycle | `PARTIAL (Single-Run Orchestrator Implemented)` | `UNIT & INTEGRATION` | `NONE` | Rajdeep (INTERIM) | None |
+| **SUB-08** | Experiment Orchestration & Run Lifecycle | `PARTIAL (search budget enforcement blocked)` | `UNIT` | `BLOCKED` | Rajdeep (CONFIRMED) | BLK-15 |
 | **SUB-09** | Independent Verification Engine | `ABSENT` | `NONE` | `BLOCKED(by=BLK-08)` | Rajdeep (CONFIRMED) | BLK-08 |
 | **SUB-10** | Report Artifact Generator | `ABSENT` | `NONE` | `BLOCKED(by=BLK-09)` | Rajdeep (INTERIM) | BLK-09 |
 | **SUB-11** | Control Plane API & CLI | `ABSENT` | `NONE` | `DEFERRED` | Rajdeep (INTERIM) | BLK-08 |
@@ -118,20 +118,20 @@
 - **Next Testable Step:** Add `math.isnan(obs_val)` check and non-negative boundary assertions in `evaluate.py`. Acceptance: Probe P-05 returns `INCONCLUSIVE` and unit test passes.
 
 ### SUB-04: Candidate Identity & Deterministic Ranking
-- **Intended Behavior:** Stable deterministic candidate ID generation from canonical configurations; deterministic ranking of feasible candidates under declared objective with candidate-ID tie-breaking.
-- **Actual Behavior:** Implemented in `src/slokern/core/search/candidate_id.py:generate_candidate_id@356c489` and `src/slokern/core/search/rank.py:rank_candidates@356c489`. Infeasible/inconclusive candidates are excluded (P-13); ranking is deterministic across 20 shuffles (P-15); ties are broken by candidate ID (P-14). However, formatting numbers as float vs int produces different hashes (P-12 / BLK-11).
-- **Evidence:** `src/slokern/core/search/candidate_id.py:L10-17@356c489`, `src/slokern/core/search/rank.py:L21-56@356c489`, probes P-11 through P-16.
+- **Intended Behavior:** Stable deterministic candidate ID generation from canonical configurations; deterministic ranking of feasible candidates under declared objective with candidate-ID tie-breaking; 2×2 bounded search space generation.
+- **Actual Behavior:** The 2×2 space and default five-search-run budget work, and the controller persists a `SearchResult` that round-trips through the canonical schema. Audit reproduced a configuration that allows six search runs and no verification run. Feasible candidates with missing objective values remain selectable; Mode A can fall back to reciprocal throughput when pricing is missing. Dedicated rank tests are absent (`test_rank.py` contains no tests).
+- **Evidence:** Current audit: 242 requested deterministic tests passed; focused space/budget tests 10 passed; controller/schema tests 112 passed. See `BLK-15` and `BLK-16`.
 - **Dependencies:** `SUB-02` (Contracts), `SUB-03` (Evaluator).
-- **Risks:** Inconsistent hashing if numeric settings are not coerced to canonical types.
-- **Next Testable Step:** Canonicalize numeric types before JSON serialization in `candidate_id.py`. Acceptance: `generate_candidate_id("m", "r", {"tp": 1}) == generate_candidate_id("m", "r", {"tp": 1.0})`.
+- **Risks:** Budget constructor can relax the required invariant; missing objective values and monetary fallback can produce an unsupported winner.
+- **Next Testable Step:** Enforce the invariant, settle missing-metric ranking behavior, align Mode A fallback with the documented cost policy, and add objective/tie tests before TASK-11 relies on search output.
 
 ### SUB-05: Serving Adapter & Runtime Infrastructure
 - **Intended Behavior:** Interface for serving runtimes (capabilities, apply, environment fingerprint, health); fake adapter for offline testing; Nebius Cloud adapter for live serving.
-- **Actual Behavior:** **IMPLEMENTED (Fake) / PARTIAL (Live).** `FakeServingAdapter` is fully implemented in `src/slokern/engine/serving/fake.py` along with `base.py` and `capabilities.py`. Generates deterministic synthetic token streams, simulates latency scaling, validates capabilities, and supports controlled failure injection (OOM, timeout, server error) labeled **`DEMO DATA`**. Verified across 43 unit tests (`tests/unit/engine/serving/`). Live Nebius adapter (`nebius.py`) remains pending live cloud preflight probe (BLK-04).
-- **Evidence:** `src/slokern/engine/serving/fake.py`, `base.py`, `capabilities.py`: 43 unit tests passing (`.venv/bin/pytest tests/unit/engine/serving/ -v`).
+- **Actual Behavior:** `FakeServingAdapter` supports offline synthetic runs labeled **`DEMO DATA`**. `NebiusServingAdapter` uses stdlib urllib for OpenAI-compatible completions and sanitizes handled API-key/Bearer-token errors. Its local `apply_config()` does not transmit or read back `max_num_seqs` or `max_num_batched_tokens`; the live smoke test skipped because credentials were absent. Secret handling was checked in mocked unit paths; live behavior is unverified.
+- **Evidence:** Current requested deterministic subset: 242 passed; `tests/live/test_smoke_live.py`: 1 skipped. See `BLK-04` and `BLK-17`.
 - **Dependencies:** DEC-01, BLK-04.
-- **Risks:** Live GPU inference unverified until Nebius Cloud credentials and preflight probe are executed (`TASK-09`).
-- **Next Testable Step:** Wire `FakeServingAdapter` into `SingleRunExecutor` (`TASK-08`) and execute live preflight probe (`TASK-09`). Acceptance: `tests/live/test_smoke_live.py` passes on live endpoint.
+- **Risks:** Endpoint reachability, engine-control application/read-back, model identity, and live inference remain unverified; standard API requests alone do not establish GPU serving optimization.
+- **Next Testable Step:** Resolve the endpoint control interface/architecture decision, then run a credentialed preflight and verify effective engine settings.
 
 ### SUB-06: Subprocess Load Generator & Workload Fixtures
 - **Intended Behavior:** Subprocess-isolated load generator generating Poisson/constant request schedules, recording unaggregated request-level microsecond timings to JSONL (`RawRequestMeasurement`), and detecting client saturation (`generator_saturated = True`).
@@ -151,11 +151,11 @@
 
 ### SUB-08: Experiment Orchestration & Run Lifecycle
 - **Intended Behavior:** Modular monolith experiment controller managing the 6-run search budget (1 baseline + 4 grid candidates + 1 verification run), lifecycle states (`ExecutionStatus`), cancellation, and artifact persistence.
-- **Actual Behavior:** **PARTIAL (Single-Run Orchestrator Implemented).** `SingleRunExecutor` (`src/slokern/engine/runner/run_executor.py`), `RunLifecycle` (`lifecycle.py`), and `CancellationToken` (`cancel.py`) are fully implemented and verified with 31 unit tests (`tests/unit/engine/runner/`) and 1 integration test (`tests/integration/test_pipeline_fake_adapter.py`). End-to-end execution wires config application, health checks, load generation, metrics calculation, SLO feasibility evaluation, and disk persistence under `artifacts/experiments/<experiment_id>/runs/<run_id>/`. Multi-candidate experiment controller managing search budget is pending in `TASK-10`.
-- **Evidence:** `src/slokern/engine/runner/run_executor.py`, `lifecycle.py`, `cancel.py`, `tests/unit/engine/runner/`, `tests/integration/test_pipeline_fake_adapter.py`.
+- **Actual Behavior:** `SingleRunExecutor`, `RunLifecycle`, and `CancellationToken` provide the single-run path. The grid controller has a five-run default path, but the configurable budget can be relaxed to consume the verification run, so the end-to-end campaign invariant is not guaranteed (`BLK-15`).
+- **Evidence:** Current audit: requested subset 242 passed; budget bypass reproduced directly. See `BLK-15`.
 - **Dependencies:** `SUB-04` (Search), `SUB-05` (Serving), `SUB-06` (Loadgen), `SUB-07` (Metrics).
-- **Risks:** Multi-candidate search loop and budget controller (`TASK-10`) still required before live campaigns.
-- **Next Testable Step:** Implement `GridSearchController` (`TASK-10`) exploring 2×2 parameter matrix using `SingleRunExecutor`. Acceptance: 5 runs executed within 6-run budget.
+- **Risks:** Search campaign may consume the verification slot through altered limiter settings.
+- **Next Testable Step:** Close `BLK-15` before implementing the independent verification consumer.
 
 ### SUB-09: Independent Verification Engine
 - **Intended Behavior:** Takes the winning feasible candidate, triggers a fresh independent rerun under a new `verification_run_id`, computes metric drift ($\Delta M$), and renders a deterministic verification verdict (`VERIFIED` or `VERIFICATION_FAILED`).
@@ -240,12 +240,12 @@ flowchart LR
 | Stage | Pipeline Function | Implemented Module | Current Reality | Verification Status | Real Pipeline Blockage |
 |---|---|---|---|---|---|
 | **0. Spec** | Workload & SLO contract specification | `src/slokern/contracts/` | Implemented; Pydantic v2 schemas valid, `extra='forbid'` enforced. | `UNIT` (pass, 119 tests) | Operational. |
-| **1. Serving** | Runtime configuration & preflight check | `src/slokern/engine/serving/` | `FakeServingAdapter` implemented; live Nebius adapter pending cloud probe. | `INTEGRATION` (pass, 43 tests) | Offline serving operational; live cloud blocked by BLK-04. |
+| **1. Serving** | Runtime configuration & preflight check | `src/slokern/engine/serving/` | Fake adapter and Nebius HTTP transport exist; searched engine knobs are not transmitted or read back. Live probe skipped without credentials. | `UNIT` (targeted subset passed; live NOT RUN) | Cannot evidence remote application of engine parameters; blocked by BLK-04 and BLK-17. |
 | **2. Loadgen** | Traffic generation & raw JSONL capture | `src/slokern/engine/loadgen/` | Subprocess load generator with Poisson/constant arrival implemented. | `UNIT` (pass, 38 tests) | Operational. Dispatches requests and records valid JSONL traces. |
 | **3. Metrics** | Raw events to `MetricSet` aggregation | `src/slokern/core/metrics/` | Pure deterministic metrics engine implemented. | `UNIT` (pass, 42 tests) | Operational. Computes percentiles, throughput, and validity. |
 | **4. Evaluator**| Feasibility verdict vs hard SLO constraints | `src/slokern/core/evaluator/` | Implemented; NaN & negative latency guards active. | `UNIT` (pass, 29 tests) | Operational. Emits deterministic FeasibilityResult. |
-| **5. Ranking** | Feasible candidate sorting by objective | `src/slokern/core/search/` | Implemented; deterministic ranking with candidate-ID tie-breaking. | `UNIT` (pass, 13 tests) | Operational in memory if passed evaluated candidates. |
-| **6. Verification**| Independent rerun under fresh run ID | `src/slokern/core/verification/` | **ABSENT.** Skeletons only; no drift comparison logic. | `NONE` | Blocked by Stage 5 & BLK-08. No rerun orchestrator. |
+| **5. Ranking** | Feasible candidate sorting by objective | `src/slokern/core/search/` | Feasible filter and deterministic sort exist; missing objective metrics can remain selectable and Mode A fallback can treat throughput as cost. | `UNIT` (audit found untested gaps) | Blocked by BLK-16; no dedicated tests in `test_rank.py`. |
+| **6. Verification**| Independent rerun under fresh run ID | `src/slokern/core/verification/` | **ABSENT.** Skeletons only; no drift comparison logic. | `NONE` | Blocked by Stage 5, TASK-10 budget invariant, and BLK-08/15/16. No rerun orchestrator. |
 | **7. Report** | Publish self-contained evidence artifact | `src/slokern/engine/reporting/` | **ABSENT.** Skeletons only; no Markdown builder. | `NONE` | Blocked by Stage 6 & BLK-09. No report output. |
 
 ---
@@ -289,6 +289,9 @@ flowchart LR
 | **BLK-12** | **P2** | Probe P-19: All 11 models accepted unrecognized fields silently (`extra='ignore'`). | Contracts did not strictly reject invalid or misspelled fields at system boundaries. | SUB-02 | Rajdeep | Added `model_config = ConfigDict(extra='forbid')` to all 11 contract classes. | **RESOLVED** (103 roundtrip tests pass in `tests/contract/`) |
 | **BLK-13** | **P2** | `.github/workflows/ci.yml:L1-58@356c489` lacks linting, type checks, schema drift, and secret scanning steps. | Code regressions, typing errors, or secret leaks can bypass CI unnoticed. | SUB-13 | Rajdeep | Add `ruff check`, `mypy --strict src/slokern`, and secret scanning checks to `ci.yml`. | `.github/workflows/ci.yml` execution in GitHub Actions |
 | **BLK-14** | **P2** | Git preflight R-01: `README.md` was modified in the working tree. | Working tree baseline was not clean. | SUB-13 | Rajdeep | Committed baseline modifications on integration branch. | **RESOLVED** (Clean tree verified on branch) |
+| **BLK-15** | **P0** | `BudgetLimiter` constructor accepts configurable limits that allow six search executions and zero verification runs. | A caller can violate the required 1 baseline + 4 candidate + 1 verification allocation. | SUB-04 | Rajdeep | Enforce the campaign invariant regardless of constructor inputs and reject invalid/non-positive limits. | Add constructor boundary tests and prove sixth search is rejected for all accepted configurations. |
+| **BLK-16** | **P1** | Ranking accepts FEASIBLE results with missing objective metrics; Mode A may substitute reciprocal throughput when monetary cost metadata is absent. | A candidate without declared objective evidence can win, or a non-monetary proxy can be represented as monetary cost. | SUB-04 | Rajdeep | Reject/mark unrankable missing objective values and align fallback with documented Mode A/Mode B policy; add focused ranking tests. | Test missing metrics, feasibility filtering, both objective directions, tie-breaking, and missing-price behavior. |
+| **BLK-17** | **P0** | `NebiusServingAdapter.apply_config()` updates local state but HTTP requests do not apply or read back searched vLLM engine knobs. | Search results cannot evidence that declared serving-engine configurations were applied on the remote runtime. | SUB-05 | Rajdeep | Resolve the endpoint control interface; use a runtime with observable engine settings or formally narrow optimization scope through the documented architecture process. | Live preflight demonstrates requested/effective setting read-back for each searched parameter. |
 
 ---
 

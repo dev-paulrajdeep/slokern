@@ -41,11 +41,10 @@ def rank_candidates(
     ]
 
     # Sort
-    # Fix: if ranking_metric is None, treat it as inf if minimizing to push to end
-    # If maximizing (minimize is False), treat it as -inf. But we negate the metric for sorting!
-    # So if metric is None and we negate, it should sort AFTER valid numbers.
-    # We want max valid numbers first (lowest negated value), and None last (highest value).
-    # Therefore, if metric is None and maximize, key is +inf.
+    # Missing metrics sort after numeric metrics, but candidates are not removed.
+    # Consequently a candidate with no objective evidence can still appear in the
+    # returned list (and can be selected if every feasible candidate lacks a value).
+    # See BLK-16; callers must not treat this ordering alone as proof of rankability.
     feasible_candidates.sort(
         key=lambda c: (
             c.ranking_metric if minimize and c.ranking_metric is not None else float('inf') if minimize else -c.ranking_metric if c.ranking_metric is not None else float('inf'),

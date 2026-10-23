@@ -156,9 +156,11 @@ class BaseServingAdapter(ABC):
     def apply_config(self, candidate_config: CandidateConfig, strict: bool = False) -> CandidateConfig:
         """
         Applies a candidate configuration to the serving runtime.
-        Performs read-back verification: checks requested vs applied settings,
-        classifies parameter statuses (APPLIED, UNSUPPORTED, REJECTED, DEFAULT_FALLBACK),
-        attaches environment fingerprint, and returns the verified CandidateConfig.
+        Implementations should independently verify requested vs applied settings,
+        classify parameter statuses (APPLIED, UNSUPPORTED, REJECTED, DEFAULT_FALLBACK),
+        attach an environment fingerprint, and return the CandidateConfig. This
+        abstract method does not itself guarantee external read-back; Nebius currently
+        only evaluates locally declared capabilities (BLK-17).
         If strict=True, raises ConfigurationError if any parameter is rejected or unsupported.
         """
         pass

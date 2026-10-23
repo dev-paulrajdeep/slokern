@@ -6,6 +6,8 @@
 > **Collaborator Workstreams:** Adriraj (Benchmark Integrity, active Oct 21), Daksh (Decision Verification, active Oct 24)  
 > **Authority:** Aligned with [README.md](../README.md), [ROADMAP.md](../ROADMAP.md), and [docs/ownership.md](ownership.md)
 
+> **Guide status:** This is an acceptance checklist, not proof that its CLI commands or live controls currently exist. `slokern smoke-test/optimize/verify`, provider preflight artifacts, vLLM flag application/read-back, and independent verification must be treated as planned until implemented and executed. Current gaps are tracked in TASK-09–TASK-11 and BLK-04/08/15/16/17.
+
 ---
 
 ## 1. Single-Owner Daily Engineering Ritual

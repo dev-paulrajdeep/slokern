@@ -15,9 +15,10 @@ class BudgetExhaustedError(Exception):
 
 class BudgetLimiter:
     """
-    Enforces the strict 6-run experiment budget:
+    Defaults to a 6-run allocation:
     1 baseline + 4 search candidates + 1 verification run = 6 runs total.
-    Ensures candidate search strictly halts after 5 runs (1 baseline + 4 candidates).
+    The default search limit is 5 (baseline + candidates). Constructor limits are
+    configurable, so this class does not itself make that allocation invariant.
     """
 
     def __init__(

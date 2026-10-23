@@ -134,8 +134,8 @@
 - **Next Testable Step:** Resolve the endpoint control interface/architecture decision, then run a credentialed preflight and verify effective engine settings.
 
 ### SUB-06: Subprocess Load Generator & Workload Fixtures
-- **Intended Behavior:** Subprocess-isolated load generator generating Poisson/constant request schedules, recording unaggregated request-level microsecond timings to JSONL (`RawRequestMeasurement`), and detecting client saturation (`generator_saturated = True`).
-- **Actual Behavior:** **IMPLEMENTED.** Fully functional modules in `src/slokern/engine/loadgen/` (`arrival.py`, `recorder.py`, `runner.py`). Dispatches requests in an isolated subprocess (`isolate_process=True`) to avoid GIL timing interference, generates constant and Poisson arrivals with microsecond precision, writes unaggregated JSONL records with immediate disk flush, and flags client queue saturation when dispatch lag > 10ms or offered load < 90% target rate. Verified across 38 unit tests and an independent 6-phase victory audit.
+- **Intended Behavior:** Subprocess-isolated load generator generating Poisson/constant request schedules, recording unaggregated request-level timing observations to JSONL (`RawRequestMeasurement`), and detecting client saturation (`generator_saturated = True`).
+- **Actual Behavior:** **IMPLEMENTED, with measurement limitations.** Modules in `src/slokern/engine/loadgen/` (`arrival.py`, `recorder.py`, `runner.py`) dispatch requests in an isolated subprocess when configured, generate constant and Poisson arrivals, write JSONL records, and flag saturation when mean dispatch lag >10 ms or offered load <90% of target. Timestamps use floating-point epoch seconds from `time.time()`; this does not prove microsecond clock accuracy. Prompt token count is estimated from whitespace, not measured with a pinned tokenizer. Historical unit-test and audit results are not current-run evidence.
 - **Evidence:** `src/slokern/engine/loadgen/`: 38 unit tests passing (`.venv/bin/pytest tests/unit/engine/loadgen/ -v`); 100-request subprocess acceptance case verified; independent victory audit passed cleanly.
 - **Dependencies:** `SUB-02` (Contracts), `SUB-05` (Serving Adapter).
 - **Risks:** Windows multiprocessing spawn overhead requires proper guard protection; verified under isolated runner tests.
@@ -205,17 +205,17 @@
 
 | Contract Model | Defined in Code | Exported in `__init__` | Consumed Outside Tests | Tests Present in Repo | Round-Trip Match (P-18) | Schema Valid (P-17) | Extra Fields Policy (P-19) | Units Explicit |
 |---|---|---|---|---|---|---|---|---|
-| `WorkloadSpec` | `spec.py:L12` | Yes | No (0 files) | Valid + Invalid (`test_schemas.py`) | True | True | `ignore` (BLK-12) | Yes (`requests/s`, `s`, `tokens`) |
-| `SLOSpec` | `spec.py:L34` | Yes | Yes (`evaluate.py`) | Valid (`test_schemas.py`) | True | True | `ignore` (BLK-12) | Yes (via `SLOConstraint.unit`) |
-| `CandidateConfig` | `config.py:L11` | Yes | Yes (`space.py`) | None | True | True | `ignore` (BLK-12) | Yes (settings dictionary) |
-| `ExperimentSpec` | `spec.py:L52` | Yes | No (0 files) | None | True | True | `ignore` (BLK-12) | Yes (`seconds`, `multiplier`) |
-| `RunRecord` | `run.py:L11` | Yes | No (0 files) | None | True | True | `ignore` (BLK-12) | Yes (ISO microsecond timestamps) |
-| `RawRequestMeasurement`| `evidence.py:L11` | Yes | No (0 files) | Valid (`test_schemas.py`) | True | True | `ignore` (BLK-12) | Yes (epoch seconds, token counts)|
-| `MetricSet` | `metrics.py:L22` | Yes | Yes (`evaluate.py`, `rank.py`) | Serialization (`test_schemas.py`) | True | True | `ignore` (BLK-12) | Yes (`ms`, `rps`, `tps`, fraction) |
-| `FeasibilityResult` | `verdict.py:L24` | Yes | Yes (`evaluate.py`) | Valid (`test_schemas.py`) | True | True | `ignore` (BLK-12) | Yes (preserves constraint units) |
-| `SearchResult` | `search.py:L18` | Yes | No (0 files) | None | True | True | `ignore` (BLK-12) | Yes (objective enum, metrics) |
-| `VerificationRecord` | `verification.py:L19`| Yes | No (0 files) | None | True | True | `ignore` (BLK-12) | Yes (drift percent, IDs) |
-| `ReportArtifact` | `report.py:L27` | Yes | No (0 files) | None | True | True | `ignore` (BLK-12) | Yes (embedded specs & metrics) |
+| `WorkloadSpec` | `spec.py:L12` | Yes | No (0 files) | Valid + Invalid (`test_schemas.py`) | True | True | `forbid` (BLK-12 resolved) | Yes (`requests/s`, `s`, `tokens`) |
+| `SLOSpec` | `spec.py:L34` | Yes | Yes (`evaluate.py`) | Valid (`test_schemas.py`) | True | True | `forbid` (BLK-12 resolved) | Yes (via `SLOConstraint.unit`) |
+| `CandidateConfig` | `config.py:L11` | Yes | Yes (`space.py`) | None | True | True | `forbid` (BLK-12 resolved) | Yes (settings dictionary) |
+| `ExperimentSpec` | `spec.py:L52` | Yes | No (0 files) | None | True | True | `forbid` (BLK-12 resolved) | Yes (`seconds`, `multiplier`) |
+| `RunRecord` | `run.py:L11` | Yes | No (0 files) | None | True | True | `forbid` (BLK-12 resolved) | Yes (ISO timestamps; resolution not guaranteed by clock source) |
+| `RawRequestMeasurement`| `evidence.py:L11` | Yes | No (0 files) | Valid (`test_schemas.py`) | True | True | `forbid` (BLK-12 resolved) | Yes (epoch seconds; input tokens currently estimated)|
+| `MetricSet` | `metrics.py:L22` | Yes | Yes (`evaluate.py`, `rank.py`) | Serialization (`test_schemas.py`) | True | True | `forbid` (BLK-12 resolved) | Yes (`ms`, `rps`, `tps`, fraction) |
+| `FeasibilityResult` | `verdict.py:L24` | Yes | Yes (`evaluate.py`) | Valid (`test_schemas.py`) | True | True | `forbid` (BLK-12 resolved) | Yes (preserves constraint units) |
+| `SearchResult` | `search.py:L18` | Yes | No (0 files) | None | True | True | `forbid` (BLK-12 resolved) | Yes (objective enum, metrics) |
+| `VerificationRecord` | `verification.py:L19`| Yes | No (0 files) | None | True | True | `forbid` (BLK-12 resolved) | Yes (drift percent, IDs) |
+| `ReportArtifact` | `report.py:L27` | Yes | No (0 files) | None | True | True | `forbid` (BLK-12 resolved) | Yes (embedded specs & metrics) |
 
 ---
 
@@ -327,7 +327,7 @@ SLOKern solves one problem: **Given a declared workload and hard tail-latency/er
 1. User provides `WorkloadSpec` and `SLOSpec`.
 2. SLOKern verifies preflight connectivity to the serving endpoint (or selects `FakeServingAdapter` if offline).
 3. Search controller evaluates a bounded 2×2 parameter matrix (4 candidates + 1 baseline).
-4. Subprocess load generator executes each run, capturing unaggregated microsecond timings to JSONL traces.
+4. Subprocess load generator executes each run, capturing unaggregated request-level timestamp observations to JSONL traces; exact clock resolution is not established.
 5. Metrics engine derives `MetricSet` and flags load generator saturation.
 6. Evaluator deterministically computes feasibility verdicts against hard SLOs.
 7. Ranker selects the lowest-cost feasible candidate under Mode B systems proxy (or Mode A monetary cost if rates are verified).
@@ -402,4 +402,19 @@ Scope freeze can only be reopened if:
 1. Rajdeep explicitly ratifies an ADR amending the search space or execution model.
 2. Nebius Cloud infrastructure proves incompatible with the selected model, requiring an emergency model substitution.
 3. The submission deadline is extended by hackathon organizers.
+
+### 7.7 Deployment Decision Research (2026-10-23)
+- Read-only platform/model research is recorded in [`deployment-decision-2026-10-23.md`](deployment-decision-2026-10-23.md).
+- **Research status:** The memo's Nemotron Nano 9B v2 / H100 VM conclusion is an alternative study, not an accepted change to ADR 0001-B's Nemotron-3-Nano-30B-A3B FP8 model-family target. DEC-0013 records the conflict and keeps the new 30B Serverless/vLLM 0.12.0 profile open pending Rajdeep's decision.
+- **Implementation reality unchanged:** `SUB-04`/`TASK-10` remains blocked by `BLK-15`/`BLK-16`; `SUB-05`/`TASK-09` remains partial/blocked by `BLK-04`/`BLK-17`. No deployment, live inference, or account access was performed for the research.
+
+### 7.8 Documentation and Profile Reality Audit (2026-10-23)
+- The accepted product flow remains `SPECIFY → VALIDATE → MEASURE → EVALUATE → OPTIMIZE → VERIFY → EXPLAIN`; execution status, evidence validity, SLO feasibility, objective rankability, and verification status remain separate concepts.
+- **Current source profile:** `generate_2x2_candidates()` creates four candidates from `max_num_batched_tokens ∈ {1024, 2048}` and `max_num_seqs ∈ {16, 64}`. `GridSearchController` counts a baseline plus up to four candidate runs under the default five-search/one-verification `BudgetLimiter`. The limiter accepts custom values that can consume the verification reserve (`BLK-15`).
+- **New profile status:** The proposed centre baseline `(max_num_seqs=128, max_num_batched_tokens=8192)` and four candidates from `{64, 256} × {2048, 16384}` are a proposal only; no code or contract change was made. `NebiusServingAdapter.apply_config()` checks declared capabilities and updates local config state; it does not send or read back vLLM process flags (`BLK-17`).
+- **Decision integrity:** `rank_candidates()` filters on `FEASIBLE` but leaves candidates with absent ranking values in the list. `extract_ranking_metric()` can substitute reciprocal throughput for missing monetary metrics. A missing objective value can therefore reach winner selection (`BLK-16`).
+- **Measurement reality:** the load generator estimates input tokens as `int(len(prompt.split()) * 1.3)`; the contract describes `input_tokens` as measured. Current metrics derive an average of recorded chunk-gap observations per request (or an elapsed-time fallback), not a guaranteed per-token TPOT. There is no TPOT field, bootstrap interval, p99 lateness/CPU gate, cache/preemption metric, or accepted ±15% verification tolerance.
+- **Verification reality:** `src/slokern/core/verification/protocol.py` and `compare.py` remain stubs. `SLOSpec.min_sample_count` is the implemented general sample gate; the percentile helper computes percentiles for any non-empty sample count and does not implement per-percentile 10/30/100 thresholds.
+- **Operational and billable accounting:** preflight, pilot ladder, baseline replicate, retries, failed deployments, server startup/download/idle time, and teardown delay must be logged and capped separately from controller-counted search/verification runs. Exclusion from the controller counter does not make a run or resource time free.
+- No task status, validation level, or hackathon compliance state is promoted by these documentation corrections.
 

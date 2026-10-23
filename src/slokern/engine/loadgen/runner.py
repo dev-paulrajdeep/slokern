@@ -1,5 +1,5 @@
 """
-Purpose: Subprocess-isolated load generator runner producing request-level microsecond timings.
+Purpose: Subprocess-isolated load generator runner producing request-level timestamp observations.
 Owner: Rajdeep (Historical design: Adriraj)
 Authority: Aligned with docs/experiment-methodology.md Section 2-4 and AGENTS.md Section 1, 3, 4
 """
@@ -96,6 +96,8 @@ async def _async_dispatch_loop(
                 stream=stream,
             )
 
+            # This whitespace-based estimate is not tokenizer evidence; exact token
+            # counts require the pinned model tokenizer (see benchmark limitations).
             input_tokens = max(1, int(len(prompt.split()) * 1.3))
 
             if stream:

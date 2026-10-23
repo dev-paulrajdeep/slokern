@@ -52,13 +52,13 @@ SLOKern answers the fundamental systems engineering question:
 
 1. **Deterministic Evaluation:** Feasibility verdicts are calculated strictly by deterministic Python code. No LLM or heuristic scorer may override hard SLO constraints or pass/fail thresholds.
 2. **Missing $\ne$ Passing:** A missing or uncalculable metric returns `INCONCLUSIVE`. It can never be treated as a pass.
-3. **Strict Benchmark Budget:** Total exploration is strictly locked to **six benchmark runs**:
+3. **Intended Benchmark Budget:** The intended campaign allocates **six runs**:
    - 1 Baseline run (default configuration).
    - 4 Candidate runs (fixed 2×2 parameter matrix).
    - 1 Independent verification rerun.
-   *(Preflight smoke test is a preliminary health check counted separately).*
-4. **Mandatory Independent Verification:** A candidate configuration marked `FEASIBLE` during search is never awarded the verified badge until a secondary run under a distinct `verification_run_id` independently satisfies all constraints.
-5. **Traceable Raw Evidence:** Aggregates are never stored alone. Every metric is traceable to microsecond-accurate raw client request traces (`RawRequestMeasurement` in JSONL).
+   *(Preflight smoke test is a preliminary health check counted separately. Current `BudgetLimiter` defaults to this allocation but accepts overrides that can consume the verification reserve; `BLK-15` is active.)*
+4. **Mandatory Independent Verification:** This is the product requirement. The current verification protocol and comparison modules are stubs (`BLK-08`), so no candidate should be described as independently verified by the current implementation.
+5. **Traceable Raw Evidence:** Aggregates are intended to trace to raw client request records (`RawRequestMeasurement` in JSONL). Recorded epoch timestamps do not guarantee microsecond measurement accuracy, and input token counts currently use a whitespace estimate.
 6. **No Fabricated Pricing:** If authoritative cloud provider rates cannot be verified, monetary cost is reported as **`unavailable`**, and optimization falls back to Mode B (non-monetary systems proxy: GPU-seconds per request or throughput under SLO).
 
 ---
@@ -113,12 +113,12 @@ flowchart TD
 |---|---|---|---|
 | **Contracts** | `Pydantic Data Models` | `src/slokern/contracts/` | Canonical schemas for specs, configurations, metrics, and verdicts (`enums.py`, `metrics.py`). |
 | **Control Plane** | `FastAPI & SSE API` | `src/slokern/api/` | Accepts specifications, enforces experiment budgets, manages cancellation, streams progress. |
-| **Serving** | `Serving Adapter` | `src/slokern/engine/serving/` | Manages runtime lifecycle; captures `environment_fingerprint`; reads back effective settings. |
-| **Benchmarking** | `Subprocess Loadgen` | `src/slokern/engine/loadgen/` | Dispatches Poisson/constant arrival traffic; writes raw microsecond event timestamps to JSONL. |
+| **Serving** | `Serving Adapter` | `src/slokern/engine/serving/` | Intended to manage runtime lifecycle and read back effective settings. Current Nebius adapter does not apply/read back remote flags (`BLK-17`). |
+| **Benchmarking** | `Subprocess Loadgen` | `src/slokern/engine/loadgen/` | Dispatches Poisson/constant arrival traffic; writes raw request timestamp observations to JSONL. Recorded precision does not establish microsecond clock accuracy. |
 | **Metrics** | `Metrics Engine` | `src/slokern/core/metrics/` | Computes percentiles (p50/p95/p99), throughput, error rates; separates offered from achieved load. |
 | **Evaluator** | `Feasibility Evaluator` | `src/slokern/core/evaluator/` | Audits hard constraints; emits `FEASIBLE`, `INFEASIBLE`, or `INCONCLUSIVE` with reason codes. |
-| **Search** | `Search Controller` | `src/slokern/core/search/` | Explores bounded 2×2 parameter matrix within budget; ranks feasible candidates by declared objective. |
-| **Verification**| `Verification Runner` | `src/slokern/core/verification/`| Executes fresh independent rerun under new run ID; calculates drift deltas ($\Delta M$) and final verdict. |
+| **Search** | `Search Controller` | `src/slokern/core/search/` | Current source generates the `{1024,2048} × {16,64}` grid and ranks FEASIBLE rows; budget override and missing-objective gaps remain (`BLK-15`, `BLK-16`). |
+| **Verification**| `Verification Runner` | `src/slokern/core/verification/`| Intended to execute a fresh independent rerun and calculate drift; current protocol/comparison modules are stubs (`BLK-08`). |
 | **Reporting** | `Report Builder` | `src/slokern/engine/reporting/` | Compiles immutable, publishable `ReportArtifact` linking all evidence, fingerprints, and limitations. |
 | **Dashboard** | `Command Center` | `frontend/` | Cyberpunk-inspired technical UI displaying live monitor, candidate comparison, and audit reports. |
 
@@ -178,22 +178,25 @@ Naive benchmark harnesses collapse execution state, data quality, and SLO feasib
 
 | Model Role | Model Identifier | Architecture & Specifications | Current Status |
 |---|---|---|---|
-| **1. Model-Agnostic Core** | Decoupled Engine | Contracts, evaluator, load generator, and search controllers are model-agnostic. | `VERIFIED` |
+| **1. Model-Agnostic Core** | Decoupled Engine | Intended separation of contracts, evaluator, load generator, and search controller. | `PARTIAL / NOT INDEPENDENTLY VERIFIED` |
 | **2. Hackathon Compliance Target** | `Nemotron-3-Nano-30B-A3B` (FP8) | Official NVIDIA open-weights family: Mamba-2 hybrid layers + MoE (~30B total, ~3B active per token in design), 262K context, FP8 quantization. Listed in Nebius catalog. | `PENDING RUNTIME VERIFICATION` (Blocked on live smoke test) |
 | **3. Runtime-Verified Endpoint** | *Pending Smoke Test* | Exact API model string on Nebius (e.g. `nvidia/Nemotron-3-Nano-30B-A3B`). | `PENDING RUNTIME VERIFICATION` |
 | **4. Internal Pipeline Baseline** | `meta-llama/Meta-Llama-3-8B-Instruct` | Preserved from ADR 0001-A for pipeline validation, fake-adapter tests, and regression fixtures. | `COMPARATIVE ONLY` (Does not satisfy NVIDIA model mandate alone) |
 | **5. Secondary Comparison Model** | `nvidia/Llama-3.1-Nemotron-70B-Instruct` | Hypothetical secondary comparison model if quota and access permit. | `UNVERIFIED` |
 
 ### Serving Infrastructure
-- **Platform:** Nebius AI Cloud GPU Compute (1× NVIDIA H100 80GB SXM5 or A100 80GB PCIe) / Nebius Token Factory inference runtime.
-- **Serving Engine:** Containerized `vLLM` or OpenAI-compatible managed streaming endpoint.
+- **Accepted model-family candidate:** Nemotron-3-Nano-30B-A3B FP8 (exact model revision and endpoint identifier remain unverified).
+- **Proposed controlled path:** Nebius AI Cloud Serverless AI custom container, one H100 SXM GPU, and vLLM 0.12.0. Account capacity, quota, supported image, exact model compatibility, and effective flag read-back are unresolved; no deployment has been verified.
+- **Managed reference:** Token Factory can serve as an explicitly labeled external comparison. Client request controls do not establish control over hidden server-side batching, GPU scheduling, or routing.
 
 ### Bounded Configuration Space & Architectural Notice
-- **Fixed 2×2 Search Space:** The candidate search is bounded to a 2×2 parameter matrix (4 candidates total). Its two specific dimensions and values are pending confirmation from the serving interface during live inspection.
+- **Implemented 2×2 Search Space:** Current source generates `max_num_batched_tokens ∈ {1024, 2048}` × `max_num_seqs ∈ {16, 64}`. The proposal's centre baseline `(128, 8192)` plus `{64, 256} × {2048, 16384}` is a separate, unratified five-point profile and is not implemented.
 - **Workload Controls vs. Serving-Engine Controls:**
   - *Workload Parameters (`concurrency_limit`, `max_tokens`):* Regulate client load generation. Changing workload knobs does **not** prove GPU-serving optimization.
   - *Serving-Engine Parameters (`max_num_seqs`, `gpu_memory_utilization`, `kv_cache_dtype`):* Reconfigure internal serving runtime and GPU memory layout.
 - **Architectural Blocker Notice:** If the live endpoint exposes only client request parameters and lacks observable/tunable serving-engine controls, this constitutes an architectural blocker. An explicit architecture decision (deploying containerized vLLM on dedicated Compute instance or refining search boundaries via ADR) will be logged.
+
+**Profile reconciliation:** The accepted target remains the Nemotron-3-Nano-30B-A3B FP8 model family (exact checkpoint/API identifier pending). A new proposal requests a Nebius Serverless AI custom container, vLLM 0.12.0, a centre baseline `(max_num_seqs=128, max_num_batched_tokens=8192)`, and four candidates from `{64, 256} × {2048, 16384}`. This is not implemented or provider-verified. Current source still generates `{16, 64} × {1024, 2048}`, and `NebiusServingAdapter.apply_config()` does not transmit/read back vLLM flags. See [DEC-0013](docs/decision-log.md#dec-0013-reconcile-the-controlled-deployment-and-search-profile-open), [deployment notes](docs/deployment.md), and [current implementation status](docs/implementation-status.md#78-documentation-and-profile-reality-audit-2026-10-23).
 
 ---
 
@@ -338,7 +341,7 @@ SLOKern enforces scientific reproducibility through strict experimental controls
 1. **Hardware & Environment Lock:** Device model, driver version, CUDA runtime, and container commit are hashed into an immutable `environment_fingerprint`.
 2. **Warm-Up Isolation:** Requests initiated during the warm-up window (`warmup_duration_s`) are tagged `is_warmup = true` and strictly excluded from percentile calculations.
 3. **Offered vs. Achieved Separation:** Intended arrival rate is verified against delivered completions; client thread starvation triggers `generator_saturated = True`.
-4. **Deterministic Percentiles:** Computed using linear interpolation (`percentile(..., method='linear')`); minimum sample thresholds enforced ($N \ge 10$ for p50, $N \ge 30$ for p95, $N \ge 100$ for p99).
+4. **Deterministic Percentiles:** The helper uses linear interpolation (`percentile(..., method='linear')`) for any non-empty input. The evaluator applies `SLOSpec.min_sample_count`; it does not enforce separate p50/p95/p99 minimums or confidence intervals.
 5. **Fresh Verification ID:** Rerunning the winning configuration generates a fresh `verification_run_id`; search evidence is never copied.
 
 ---
@@ -426,6 +429,6 @@ For the complete responsibility matrix, collaborator workstream boundaries, and 
 
 Build the smallest complete system that can **measure, decide, verify, and explain**.
 
-SLOKern does not claim universal optimality. It proves that its recommendation follows from controlled measurements, deterministic rules, a declared objective, and an independent verification run.
+SLOKern is intended to support recommendations from controlled measurements, deterministic rules, a declared objective, and an independent verification run. The current implementation still has active search, serving-control, and verification gaps documented above; any live recommendation must wait for those gaps to close.
 
 **Optimize inference. Verify performance.**

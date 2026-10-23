@@ -24,10 +24,10 @@ Every task in the project is evaluated against whether it advances this core end
 
 ### In-Scope for the Hackathon MVP
 
-1. **One Permitted Model:** A single NVIDIA open-source model supported by the hackathon environment (target: `Nemotron-3-Nano-30B-A3B` FP8 on Nebius; baseline: `meta-llama/Meta-Llama-3-8B-Instruct`).
-2. **One Serving Runtime:** A single dedicated serving backend (vLLM or OpenAI-compatible endpoint on Nebius Cloud GPU infrastructure).
+1. **One Permitted Model:** Accepted model-family candidate is `Nemotron-3-Nano-30B-A3B` FP8; exact checkpoint/tokenizer revision and endpoint identifier remain pending. `meta-llama/Meta-Llama-3-8B-Instruct` is an internal pipeline baseline only.
+2. **One Serving Runtime:** Proposed Nebius AI Cloud Serverless custom container running vLLM 0.12.0 on H100; Docker GPU VM is a fallback. Both require account, image, model, and effective-flag preflight before being called operational.
 3. **One Reproducible Workload Protocol:** A fixed prompt fixture with explicit arrival distributions (Poisson or constant rate) and separate warm-up and measurement windows.
-4. **Small Legal Search Space:** A bounded set of 2–4 tunable parameters that the serving adapter can actively apply, observe, and read back (fixed 2×2 parameter matrix, 4 candidates).
+4. **Small Legal Search Space:** The proposed 5-point profile is baseline `(max_num_seqs=128, max_num_batched_tokens=8192)` plus four corners `{64, 256} × {2048, 16384}`. Current code instead generates four candidates `{16, 64} × {1024, 2048}`; do not mark the proposed profile accepted until DEC-0013 and adapter read-back are resolved.
 5. **Offered vs. Achieved Load Separation:** Clear architectural distinction and measurement of intended traffic rate versus actual delivered rate.
 6. **Key Inference Metrics:** Deterministic calculation of TTFT, ITL (with defined aggregation), end-to-end latency, request throughput, output-token throughput, error rate, and percentiles (p50, p90, p95, p99).
 7. **Deterministic Feasibility Evaluator:** Auditable constraint-by-constraint rule engine returning `FEASIBLE`, `INFEASIBLE`, or `INCONCLUSIVE` with structured reason codes.

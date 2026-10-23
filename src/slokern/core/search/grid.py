@@ -77,7 +77,10 @@ class GridSearchController:
     3. Executes Runs 1-4: each candidate benchmarked via SingleRunExecutor.
     4. Evaluates feasibility, ranks candidates deterministically under the declared objective.
     5. Selects the winning feasible candidate and persists canonical SearchResult contract.
-    Enforces the strict 6-run experiment budget (halting candidate search after 5 runs).
+    Uses the default budget allocation to stop search after 5 runs. The injected
+    BudgetLimiter is configurable; its invariant is not currently strict for every
+    accepted constructor configuration (see BLK-15). This controller does not run
+    the independent verification reserved by the default sixth-run allocation.
     """
 
     def __init__(

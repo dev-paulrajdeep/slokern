@@ -106,8 +106,9 @@ def _build_nebius_capabilities(runtime_name: str, model_name: str) -> RuntimeCap
 class NebiusServingAdapter(BaseServingAdapter):
     """
     Serving adapter connecting to OpenAI-compatible vLLM endpoints hosted on Nebius Cloud.
-    Uses standard library urllib (zero heavy third-party dependencies) and guarantees
-    secret redaction in all exceptions and diagnostic logs.
+    Uses standard library urllib (zero heavy third-party dependencies). Known API-key
+    text is sanitized in selected adapter-generated messages; this is not a guarantee
+    that every exception, remote response, or diagnostic path redacts all bearer tokens.
     """
 
     DEFAULT_BASE_URL = "https://api.studio.nebius.ai/v1"
@@ -193,7 +194,9 @@ class NebiusServingAdapter(BaseServingAdapter):
     ) -> CandidateConfig:
         """
         Applies requested candidate configuration to the Nebius adapter.
-        Performs read-back verification against declared capabilities.
+        Evaluates settings against locally declared capabilities and stores the resulting
+        config locally. It does not send serving flags to, or read effective flags back
+        from, the remote endpoint (see BLK-17).
         If strict=True, raises ConfigurationError if any parameter is rejected or unsupported.
         """
         if not self.capabilities.is_model_supported(candidate_config.model_name):

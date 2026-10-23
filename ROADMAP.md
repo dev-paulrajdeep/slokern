@@ -12,6 +12,8 @@
 
 ## 1. Executive Execution Dashboard
 
+**Deployment-profile reconciliation (2026-10-23):** The accepted model-family target remains Nemotron-3-Nano-30B-A3B FP8 (ADR 0001-B). A later proposal requests Nebius Serverless AI, vLLM 0.12.0, and a new five-point profile; it is not yet ratified or validated against the current adapter/search implementation. The linked [9B H100 VM alternative study](docs/deployment-decision-2026-10-23.md) is explicitly non-authoritative. See DEC-0013. No implementation or validation status is promoted.
+
 ### 1.0 Quick Status at a Glance (The 5 Core Questions)
 1. **What is actually done?**
    - Architecture governance & scope freeze (`TASK-01`).
@@ -19,7 +21,7 @@
    - Strict contract boundaries (`extra='forbid'`) and 11 committed JSON schemas (`TASK-03`).
    - Feasibility evaluator boundary safety against NaN and negative latencies (`TASK-04`).
    - Deterministic Fake Serving Adapter (`FakeServingAdapter`) with simulated token streaming, latency scaling, and failure injection labeled **`DEMO DATA`** (`TASK-05`).
-   - Subprocess-isolated load generator with Poisson and constant arrival, microsecond JSONL event recording, and client saturation detection (`TASK-06`).
+   - Subprocess-isolated load generator with Poisson and constant arrival, request-level JSONL timestamp recording, and client saturation detection (`TASK-06`); the time source does not establish microsecond accuracy.
    - Pure deterministic metrics engine with linear-interpolated percentiles, throughput, and golden fixtures (`TASK-07`).
    - Single-Run Pipeline Orchestrator (`SingleRunExecutor`) wiring adapter, loadgen, metrics, evaluator, and artifact persistence (`TASK-08`).
    - Nebius Serving Adapter (`NebiusServingAdapter`) with OpenAI-compatible urllib transport and secret sanitization; runtime engine knob application/read-back and live endpoint behavior remain unverified (`TASK-09`, `BLK-04`, `BLK-17`).
@@ -38,6 +40,7 @@
    - Resolve these blockers before TASK-11 consumes a selected candidate.
 5. **What should the next coding-agent run do?**
    - **Resolve `BLK-15`–`BLK-17`:** Enforce the budget invariant, make candidate ranking require valid objective evidence, and establish observable serving-engine controls before continuing to `TASK-11`.
+   - Use the deployment decision memo to resolve model/hosting decisions and check project capacity before any billable provisioning.
 
 ### 1.1 Sprint Snapshot & Milestone Window
 - **Current Milestone:** **Phase C: Search & Feasibility Optimization** (Window: October 23–25, 2026; TASK-09/TASK-10 audit blockers active).
@@ -272,6 +275,7 @@ Every blocker is bound to an accountable owner, an explicit impact, an unblockin
 | **DEC-03** | Default cost accounting basis lock (Mode A vs Mode B). | **Option A:** Default to Mode B (non-monetary systems proxy: GPU-sec/req or throughput under SLO); report monetary cost as `unavailable`. | Rajdeep | Prevents fabricated or estimated pricing claims. |
 | **DEC-04** | Integration branch & baseline hygiene. | **Option A:** Commit baseline documentation updates to integration branch; maintain clean working tree. | Rajdeep | Blocks clean-clone reproducible installation check. |
 | **DEC-05** | Frontend and API scope deferral. | **Option A:** Formally freeze FastAPI and React UI as `DEFERRED`; submit CLI + Markdown `ReportArtifact`. | Rajdeep | Eliminates concentration risk (BLK-07). |
+| **DEC-0013** | Reconcile accepted model family, deployment profile, and bounded search space. | Keep ADR 0001-B's Nemotron-3-Nano-30B-A3B FP8 family as accepted; decide separately whether the proposed Serverless/vLLM 0.12.0 profile and five-point space are ratified. | Rajdeep | Blocks claims that a deployment or search profile is approved, available, or currently applied. |
 
 ---
 
@@ -292,7 +296,7 @@ This day-by-day plan governs all development leading up to the submission deadli
 ### Day 2: Thursday, October 22, 2026 — Phase B: Subprocess Load Generator & Metrics Engine
 - **Intended Outcome:** Operational load generator capable of dispatching Poisson/constant traffic to the fake adapter and writing valid `.jsonl` traces; metrics engine computing percentiles.
 - **Ordered Actions:**
-  - [x] **Action 2.1 (Rajdeep):** Execute `TASK-06`: Implement subprocess-isolated load generator in `src/slokern/engine/loadgen/runner.py` writing unaggregated microsecond events to `.jsonl`. *(COMPLETED: 38 unit tests pass; Victory Confirmed by independent audit).*
+  - [x] **Action 2.1 (Rajdeep):** Execute `TASK-06`: Implement subprocess-isolated load generator in `src/slokern/engine/loadgen/runner.py` writing unaggregated timestamped events to `.jsonl`. *(Historical completion recorded: 38 unit tests pass; see TASK-06 precision clarification below).*
   - [ ] **Action 2.2 (Adriraj):** Audit load generator output traces against `RawRequestMeasurement` schema; verify timestamp monotonicity (`scheduled_at <= sent_at <= first_token_at <= completed_at`).
   - [x] **Action 2.3 (Rajdeep):** Execute `TASK-07`: Implement `src/slokern/core/metrics/percentiles.py` and `aggregate.py` calculating TTFT/ITL percentiles and throughput from raw traces. *(COMPLETED: 42 unit tests pass).*
   - [ ] **Action 2.4 (Adriraj — Active Window Starts):** Inspect `src/slokern/contracts/evidence.py` (`RawRequestMeasurement`) and construct benchmark validation fixtures for invalid/saturated traces (`tests/contract/test_fixtures_validate.py`).
@@ -544,7 +548,7 @@ This day-by-day plan governs all development leading up to the submission deadli
 - **Deliverables:** Subprocess load generator writing microsecond request events to `.jsonl` files and detecting client saturation (`generator_saturated = True`).
 - **Definition of Done:**
   1. Request dispatch loop executes in a separate process to avoid Python GIL timing contamination.
-  2. Poisson and constant arrival intervals generated with microsecond timestamps (`scheduled_at`, `sent_at`, `first_token_at`, `completed_at`).
+  2. Poisson and constant arrival intervals recorded with timestamp fields (`scheduled_at`, `sent_at`, `first_token_at`, `completed_at`); timestamp precision must not be inferred from floating-point formatting.
   3. Output JSONL records validate 100% against `RawRequestMeasurement` schema.
   4. Client queue lag detection sets `generator_saturated = True` when dispatched traffic falls behind schedule.
 - **Verify:** `pytest tests/unit/engine/loadgen/` passes (38 passed in 17.08s).
@@ -562,6 +566,7 @@ This day-by-day plan governs all development leading up to the submission deadli
   - **Evidence paths:** `src/slokern/engine/loadgen/runner.py`, `arrival.py`, `recorder.py`, `__init__.py`, `tests/unit/engine/loadgen/`.
   - **Defects or limitations:** None identified in the tested scope; closed `BLK-02`.
   - **Next action:** Wire load generator into `SingleRunExecutor` (`TASK-08`).
+  - **Measurement precision clarification (2026-10-23):** These records contain floating-point epoch timestamps sourced from `time.time()`; the implementation does not establish microsecond clock accuracy. `input_tokens` is a whitespace estimate. Prior microsecond-accuracy wording described the intended acceptance target too strongly and must not be used as a current capability claim.
 
 ---
 
@@ -616,7 +621,7 @@ This day-by-day plan governs all development leading up to the submission deadli
 - **Boundary & Isolation:** Confined to `src/slokern/engine/serving/nebius.py` and `tests/live/test_smoke_live.py`. Provider keys read exclusively from environment variables (`NEBIUS_API_KEY`); zero secrets in code.
 - **Deliverables:** `NebiusServingAdapter` communicating with OpenAI-compatible vLLM endpoint; live smoke test script with clean skip behavior.
 - **Definition of Done:**
-  1. Adapter connects to Nebius instance, reads back applied settings, and captures `environment_fingerprint` (GPU model, CUDA version, vLLM version).
+  1. Acceptance target: adapter connects to Nebius instance, obtains independently observable applied settings, and captures `environment_fingerprint` (GPU model, CUDA version, vLLM version). Current `apply_config()` only evaluates locally declared capabilities and stores local state; it does not apply/read back remote engine flags (`BLK-17`).
   2. Live smoke test sends 1 streaming prompt request, records TTFT and streaming tokens, and receives valid completion (when credentials present).
   3. Preflight test verifies serving parameters (`max_num_batched_tokens`, `max_num_seqs`) are actively respected.
   4. Sanitizes all secrets (`NEBIUS_API_KEY`, Bearer tokens) from error messages and logs.
@@ -642,6 +647,7 @@ This day-by-day plan governs all development leading up to the submission deadli
 - **Verify:** `pytest tests/unit/core/search/ tests/unit/core/test_ranker.py` passes with 100% green assertions (26 passed).
 - **Completion Evidence:** Search controller executes 4 candidate runs within budget, identifies lowest-cost feasible candidate, emits valid `SearchResult` artifact; closes `BLK-11`.
 - **Latest Verification Audit (2026-10-23):** PARTIAL; acceptance is not complete. Space generation and default budget path pass (10 focused tests). The configured limiter can be changed to allow six search runs and zero verification runs (`BLK-15`). Controller/schema round-trip checks passed, but the five-run controller test uses a mock executor rather than `FakeServingAdapter`; feasible candidates with missing objective metrics remain rankable; Mode A can substitute a throughput proxy for missing monetary cost; and dedicated rank tests are absent (`BLK-16`). The controller writes the result directly rather than atomically, and the full non-live suite was interrupted without a result. Correct blockers and rerun targeted plus full validation before TASK-11 consumes search results.
+- **Profile alignment note (2026-10-23):** The proposed centre baseline `(128, 8192)` plus `{64, 256} × {2048, 16384}` is not implemented or ratified. Current `generate_2x2_candidates()` produces `{1024, 2048} × {16, 64}`; preserve this as the active code-space description until DEC-0013 is resolved and adapter controls are real.
 
 ---
 
@@ -654,7 +660,7 @@ This day-by-day plan governs all development leading up to the submission deadli
 - **Definition of Done:**
   1. Re-executes the winning candidate configuration under a fresh, distinct `verification_run_id` (Run 6).
   2. Recomputes derived metrics from scratch using raw verification trace evidence.
-  3. Evaluates metric drift ($\Delta \text{TTFT}$, $\Delta \text{Throughput}$) between search and verification runs against threshold tolerance.
+  3. Evaluates metric drift ($\Delta \text{TTFT}$, $\Delta \text{Throughput}$) between search and verification runs against an explicitly approved threshold. No ±15% tolerance is currently approved; `protocol.py` and `compare.py` remain stubs (`BLK-08`).
   4. Emits canonical `VerificationRecord` with definitive enum: `VERIFIED`, `VERIFICATION_FAILED`, or `VERIFICATION_INCONCLUSIVE`.
 - **Verify:** `pytest tests/unit/core/verification/` passes.
 - **Completion Evidence:** Independent verification workflow completes and produces an auditable `VerificationRecord`.
@@ -839,7 +845,7 @@ All implementation and documentation across this repository must adhere to the s
    $$\text{Total Runs} = 1 \text{ Baseline} + 4 \text{ Search Candidates} + 1 \text{ Independent Verification Rerun} = 6 \text{ Runs}$$
    Search strictly terminates after 5 runs to preserve the 6th run for independent verification.
 4. **Mandatory Independent Verification:** A candidate configuration marked `FEASIBLE` during search is never awarded the verified badge until a secondary run under a distinct `verification_run_id` independently satisfies all constraints. Search metrics are never recycled as verification proof.
-5. **Traceable Microsecond Evidence:** Every aggregate metric must be directly traceable to microsecond-accurate raw client request traces (`RawRequestMeasurement` in JSONL). Warm-up requests (`is_warmup = True`) are strictly excluded from percentile calculations.
+5. **Traceable Raw Evidence:** Every aggregate metric should be traceable to raw client request records (`RawRequestMeasurement` in JSONL). The current epoch timestamp source does not establish microsecond accuracy; do not claim that precision without clock-resolution evidence. Warm-up requests (`is_warmup = True`) are excluded from percentile calculations.
 6. **Honest Dual-Mode Cost Accounting:** If authoritative cloud provider rates cannot be verified in writing, monetary cost is reported as **`unavailable`**, and candidate selection falls back to Mode B (non-monetary systems proxy: GPU-seconds per request or throughput under SLO). Never fabricate or guess prices. Never claim global optimality beyond the tested search space.
 
 ---
@@ -910,6 +916,6 @@ All implementation and documentation across this repository must adhere to the s
    $$\text{Total Runs} = 1 \text{ Baseline} + 4 \text{ Search Candidates} + 1 \text{ Independent Verification Rerun} = 6 \text{ Runs}$$
    Search strictly terminates after 5 runs to preserve the 6th run for independent verification.
 4. **Mandatory Independent Verification:** A candidate configuration marked `FEASIBLE` during search is never awarded the verified badge until a secondary run under a distinct `verification_run_id` independently satisfies all constraints. Search metrics are never recycled as verification proof.
-5. **Traceable Microsecond Evidence:** Every aggregate metric must be directly traceable to microsecond-accurate raw client request traces (`RawRequestMeasurement` in JSONL). Warm-up requests (`is_warmup = True`) are strictly excluded from percentile calculations.
+5. **Traceable Raw Evidence:** Every aggregate metric should be traceable to raw client request records (`RawRequestMeasurement` in JSONL). The current epoch timestamp source does not establish microsecond accuracy; do not claim that precision without clock-resolution evidence. Warm-up requests (`is_warmup = True`) are excluded from percentile calculations.
 6. **Honest Dual-Mode Cost Accounting:** If authoritative cloud provider rates cannot be verified in writing, monetary cost is reported as **`unavailable`**, and candidate selection falls back to Mode B (non-monetary systems proxy: GPU-seconds per request or throughput under SLO). Never fabricate or guess prices. Never claim global optimality beyond the tested search space.
 

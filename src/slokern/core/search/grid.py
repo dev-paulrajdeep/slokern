@@ -6,15 +6,20 @@ Authority: Aligned with AGENTS.md Section 1, 3, 5, 6, and ROADMAP.md TASK-10
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import itertools
+import math
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, TYPE_CHECKING
+import threading
+import time
+from typing import Any, Dict, List, Optional, Sequence, Union, TYPE_CHECKING
 
 from slokern.contracts.config import CandidateConfig
-from slokern.contracts.enums import FeasibilityVerdict, RankingObjective
+from slokern.contracts.enums import ExecutionStatus, FeasibilityVerdict, RankingObjective
 from slokern.contracts.metrics import MetricSet
 from slokern.contracts.search import CandidateSummary, SearchResult
 from slokern.contracts.spec import ExperimentSpec, SLOSpec, WorkloadSpec
-from slokern.core.search.budget import BudgetLimiter
+from slokern.core.search.budget import BudgetLimiter, BudgetValidationError, validate_budget
 from slokern.core.search.rank import EvaluatedCandidate, rank_candidates
 from slokern.core.search.space import generate_2x2_candidates
 from slokern.engine.serving.base import BaseServingAdapter
@@ -24,9 +29,35 @@ if TYPE_CHECKING:
     from slokern.engine.runner.run_executor import SingleRunExecutor, SingleRunResult
 
 
+DEFAULT_SEARCH_SPACE = {
+    "max_num_batched_tokens": (1024, 2048),
+    "max_num_seqs": (16, 64),
+}
+
+
+class SearchConfigurationError(ValueError):
+    """Raised when the experiment cannot be safely executed as declared."""
+
+
+class SearchExecutionError(RuntimeError):
+    """Raised when a search run fails or is cancelled before valid evidence."""
+
+    def __init__(self, message: str, run_result: Optional[Any] = None):
+        super().__init__(message)
+        self.run_result = run_result
+
+
+@dataclass
+class GridSearchOutcome:
+    """Search decision plus the physical run results that support it."""
+
+    search_result: SearchResult
+    run_results: List[Any]
+
+
 def extract_ranking_metric(
     metric_set: Optional[MetricSet],
-    objective: RankingObjective
+    objective: RankingObjective,
 ) -> Optional[float]:
     """
     Extracts the scalar ranking metric from a MetricSet according to the declared objective.
@@ -77,29 +108,252 @@ class GridSearchController:
     3. Executes Runs 1-4: each candidate benchmarked via SingleRunExecutor.
     4. Evaluates feasibility, ranks candidates deterministically under the declared objective.
     5. Selects the winning feasible candidate and persists canonical SearchResult contract.
-    Uses the default budget allocation to stop search after 5 runs. The injected
-    BudgetLimiter is configurable; its invariant is not currently strict for every
-    accepted constructor configuration (see BLK-15). This controller does not run
-    the independent verification reserved by the default sixth-run allocation.
+
+    Supports both:
+    - run(spec: ExperimentSpec, ...): Spec-driven execution with preflight budget validation.
+    - execute(...): Direct invocation with modular components.
     """
 
     def __init__(
         self,
-        single_run_executor: Optional["SingleRunExecutor"] = None,
+        executor: Optional[Any] = None,
+        adapter: Optional[BaseServingAdapter] = None,
+        model_name: Optional[str] = None,
+        *,
+        single_run_executor: Optional[Any] = None,
         artifacts_root: Union[str, Path] = "artifacts",
         default_objective: RankingObjective = RankingObjective.GPU_SECONDS_PER_REQUEST,
         isolate_process: bool = False,
     ) -> None:
         self.artifacts_root = Path(artifacts_root)
         self.default_objective = default_objective
-        if single_run_executor is None:
+        self.adapter = adapter
+        self.model_name = model_name or (adapter.model_name if adapter else None)
+
+        if executor is not None:
+            self.executor = executor
+            self.single_run_executor = executor
+        elif single_run_executor is not None:
+            self.single_run_executor = single_run_executor
+            self.executor = single_run_executor
+        else:
             from slokern.engine.runner.run_executor import SingleRunExecutor
             self.single_run_executor = SingleRunExecutor(
                 artifacts_root=self.artifacts_root,
                 isolate_process=isolate_process,
             )
-        else:
-            self.single_run_executor = single_run_executor
+            self.executor = self.single_run_executor
+
+    def run(
+        self,
+        spec: ExperimentSpec,
+        *,
+        ranking_objective: RankingObjective,
+        cancellation_token: Optional[Any] = None,
+        seed: Optional[int] = 42,
+        prompts: Optional[Sequence[str]] = None,
+    ) -> GridSearchOutcome:
+        """Validate preflight budget and capabilities, then execute baseline and bounded candidates."""
+        validate_budget(spec)
+        if spec.budget.max_cost_limit is not None:
+            raise BudgetValidationError(
+                "budget.max_cost_limit cannot be enforced without an authoritative "
+                "pricing source; no runs were started"
+            )
+        if ranking_objective != RankingObjective.MAX_THROUGHPUT_UNDER_SLO:
+            raise SearchConfigurationError(
+                "Only MAX_THROUGHPUT_UNDER_SLO is currently supported; monetary "
+                "pricing and GPU allocation are not verified"
+            )
+
+        if self.adapter is None:
+            raise SearchConfigurationError("Serving adapter must be configured on GridSearchController to call run()")
+
+        candidate_settings = self._candidate_settings(spec)
+        capabilities = self.adapter.get_capabilities()
+        if not capabilities.is_model_supported(self.model_name or ""):
+            raise SearchConfigurationError(
+                f"Model {self.model_name!r} is not supported by "
+                f"{capabilities.runtime_name!r}"
+            )
+        for settings in candidate_settings:
+            for name, value in settings.items():
+                parameter = capabilities.parameters.get(name)
+                if parameter is None:
+                    raise SearchConfigurationError(
+                        f"Search parameter {name!r} is not supported by "
+                        f"{capabilities.runtime_name!r}"
+                    )
+                is_valid, _, reason = parameter.validate_value(value)
+                if not is_valid:
+                    raise SearchConfigurationError(
+                        f"Search parameter {name!r} value {value!r} is invalid: {reason}"
+                    )
+
+        from slokern.engine.runner.cancel import CancellationToken
+        token: CancellationToken = cancellation_token or CancellationToken()
+
+        deadline = time.monotonic() + spec.budget.max_wallclock_seconds
+        timeout = threading.Timer(spec.budget.max_wallclock_seconds, token.cancel)
+        timeout.daemon = True
+        timeout.start()
+
+        run_results: List[Any] = []
+        evaluated: List[EvaluatedCandidate] = []
+        candidate_summaries: Dict[str, CandidateSummary] = {}
+        tested_ids: List[str] = []
+        candidate_limit = min(4, spec.budget.max_candidates)
+        stopping_reason = "space_exhausted"
+
+        max_search_runs = 1 + candidate_limit
+        max_verif_runs = spec.verification_policy.repetitions
+        budget = BudgetLimiter(
+            max_total_runs=max_search_runs + max_verif_runs,
+            max_search_runs=max_search_runs,
+            max_verification_runs=max_verif_runs,
+            timeout_seconds=spec.budget.max_wallclock_seconds,
+        )
+
+        try:
+            configs = [self._make_config({})]
+            configs.extend(
+                self._make_config(settings)
+                for settings in candidate_settings[:candidate_limit]
+            )
+
+            for index, config in enumerate(configs):
+                if token.is_cancelled:
+                    raise SearchExecutionError("Search was cancelled before the next run")
+                if time.monotonic() >= deadline or budget.is_timed_out():
+                    stopping_reason = "timeout"
+                    break
+                if not budget.can_execute_search_run():
+                    stopping_reason = "budget_exhausted"
+                    break
+
+                budget.record_search_run()
+
+                result = self.executor.execute(
+                    candidate_config=config,
+                    workload=spec.workload,
+                    slo=spec.slo,
+                    experiment_id=spec.experiment_id,
+                    adapter=self.adapter,
+                    cancellation_token=token,
+                    seed=None if seed is None else seed + index,
+                    prompts=list(prompts) if prompts is not None else None,
+                )
+                run_results.append(result)
+                if result.execution_status != ExecutionStatus.COMPLETED:
+                    raise SearchExecutionError(
+                        f"Search run {result.run_id!r} ended with "
+                        f"{result.execution_status.value}; search stopped",
+                        run_result=result,
+                    )
+                if result.feasibility_result is None or result.metric_set is None:
+                    raise SearchExecutionError(
+                        f"Search run {result.run_id!r} completed without required "
+                        "feasibility or metric evidence",
+                        run_result=result,
+                    )
+
+                verdict = result.feasibility_result.overall_verdict
+                ranking_metric = (
+                    extract_ranking_metric(result.metric_set, ranking_objective)
+                    if verdict == FeasibilityVerdict.FEASIBLE
+                    else None
+                )
+                tested_ids.append(config.candidate_id)
+                candidate_summaries[config.candidate_id] = CandidateSummary(
+                    verdict=verdict,
+                    ranking_metric=ranking_metric,
+                )
+                evaluated.append(
+                    EvaluatedCandidate(
+                        candidate_id=config.candidate_id,
+                        verdict=verdict,
+                        ranking_metric=ranking_metric,
+                        metric_set=result.metric_set,
+                    )
+                )
+
+                if token.is_cancelled:
+                    raise SearchExecutionError(
+                        "Search exceeded its wall-clock budget during a run",
+                        run_result=result,
+                    )
+                if index == 0 and candidate_limit < 4:
+                    stopping_reason = "budget_exhausted"
+                elif index == candidate_limit:
+                    stopping_reason = "budget_exhausted" if candidate_limit < 4 else "space_exhausted"
+
+            ranked = rank_candidates(evaluated, ranking_objective)
+            winner = ranked[0] if ranked else None
+            if winner is None:
+                rationale = (
+                    "No FEASIBLE candidate had finite output-token throughput; "
+                    "no recommendation was selected."
+                )
+            else:
+                rationale = (
+                    f"Selected candidate '{winner.candidate_id}': highest finite output-token "
+                    f"throughput ({winner.ranking_metric:g} tokens/s) among FEASIBLE "
+                    "tested candidates; ties are broken by candidate ID."
+                )
+
+            search_result = SearchResult(
+                experiment_id=spec.experiment_id,
+                baseline_candidate_id=configs[0].candidate_id,
+                tested_candidates=tested_ids,
+                candidate_summaries=candidate_summaries,
+                ranking_objective=ranking_objective,
+                selected_candidate_id=winner.candidate_id if winner else None,
+                selection_rationale=rationale,
+                stopping_reason=stopping_reason,
+            )
+            return GridSearchOutcome(search_result=search_result, run_results=run_results)
+        finally:
+            timeout.cancel()
+
+    def _candidate_settings(self, spec: ExperimentSpec) -> List[dict]:
+        declared = spec.search_space or DEFAULT_SEARCH_SPACE
+        if len(declared) != 2:
+            raise SearchConfigurationError(
+                "The bounded search requires exactly two parameter axes"
+            )
+        axes = []
+        for name in sorted(declared):
+            values = declared[name]
+            if not isinstance(values, (list, tuple)) or len(values) != 2:
+                raise SearchConfigurationError(
+                    f"Search axis {name!r} must declare exactly two values"
+                )
+            if values[0] == values[1]:
+                raise SearchConfigurationError(
+                    f"Search axis {name!r} must contain two distinct values"
+                )
+            axes.append((name, tuple(values)))
+        return [
+            {axes[0][0]: first, axes[1][0]: second}
+            for first, second in itertools.product(*[axis[1] for axis in axes])
+        ]
+
+    def _make_config(self, settings: dict) -> CandidateConfig:
+        from slokern.core.search.candidate_id import generate_candidate_id
+
+        runtime_name = self.adapter.runtime_name if self.adapter else "vllm-default"
+        model_name = self.model_name or (self.adapter.model_name if self.adapter else "model-default")
+        return CandidateConfig(
+            candidate_id=generate_candidate_id(
+                model_name, runtime_name, settings
+            ),
+            model_name=model_name,
+            runtime_name=runtime_name,
+            requested_settings=settings,
+            effective_settings={},
+            parameter_status={},
+            environment_fingerprint={},
+        )
 
     def execute(
         self,
@@ -110,7 +364,7 @@ class GridSearchController:
         experiment_spec: Optional[ExperimentSpec] = None,
         ranking_objective: Optional[RankingObjective] = None,
         serving_adapter: Optional[BaseServingAdapter] = None,
-        cancellation_token: Optional[CancellationToken] = None,
+        cancellation_token: Optional[Any] = None,
         budget_limiter: Optional[BudgetLimiter] = None,
         output_dir: Optional[Union[str, Path]] = None,
         seed: Optional[int] = 42,
@@ -140,7 +394,9 @@ class GridSearchController:
         Returns:
             SearchResult canonical contract model.
         """
-        # 1. Resolve specs and parameters
+        if experiment_spec:
+            validate_budget(experiment_spec)
+
         resolved_experiment_id = (
             experiment_spec.experiment_id if experiment_spec else experiment_id
         )
@@ -174,11 +430,12 @@ class GridSearchController:
         tested_candidates: List[str] = []
         candidate_summaries: Dict[str, CandidateSummary] = {}
         evaluated_candidates: List[EvaluatedCandidate] = []
-        run_results: List[SingleRunResult] = []
+        run_results: List[Any] = []
 
         is_cancelled = False
+        adapter_to_use = serving_adapter or self.adapter
 
-        # 2. Run 0: Baseline execution
+        # Run 0: Baseline execution
         if cancellation_token and cancellation_token.is_cancelled:
             is_cancelled = True
         elif budget.can_execute_search_run():
@@ -192,7 +449,7 @@ class GridSearchController:
                 experiment_id=resolved_experiment_id,
                 run_id=baseline_run_id,
                 is_verification_run=False,
-                adapter=serving_adapter,
+                adapter=adapter_to_use,
                 cancellation_token=cancellation_token,
                 seed=seed,
                 stream=stream,
@@ -227,7 +484,7 @@ class GridSearchController:
             if cancellation_token and cancellation_token.is_cancelled:
                 is_cancelled = True
 
-        # 3. Generate 4 Search Candidates across 2x2 grid
+        # Generate 4 Search Candidates across 2x2 grid
         grid_candidates = generate_2x2_candidates(
             model_name=baseline_config.model_name,
             runtime_name=baseline_config.runtime_name,
@@ -235,7 +492,7 @@ class GridSearchController:
 
         all_grid_completed = True
 
-        # 4. Runs 1-4: Candidate Search
+        # Runs 1-4: Candidate Search
         for idx, candidate in enumerate(grid_candidates, start=1):
             if is_cancelled or (cancellation_token and cancellation_token.is_cancelled):
                 is_cancelled = True
@@ -256,7 +513,7 @@ class GridSearchController:
                 experiment_id=resolved_experiment_id,
                 run_id=run_id,
                 is_verification_run=False,
-                adapter=serving_adapter,
+                adapter=adapter_to_use,
                 cancellation_token=cancellation_token,
                 seed=seed,
                 stream=stream,
@@ -295,10 +552,10 @@ class GridSearchController:
                 all_grid_completed = False
                 break
 
-        # 5. Filter and Rank Feasible Candidates
+        # Filter and Rank Feasible Candidates
         ranked_feasible = rank_candidates(evaluated_candidates, objective)
 
-        # 6. Select Winner and Justify
+        # Select Winner and Justify
         if ranked_feasible:
             winner = ranked_feasible[0]
             selected_candidate_id = winner.candidate_id
@@ -314,13 +571,13 @@ class GridSearchController:
                 f"satisfied all declared hard SLO constraints."
             )
 
-        # 7. Determine Canonical Stopping Reason
+        # Determine Canonical Stopping Reason
         stopping_reason = budget.get_stopping_reason(
             space_exhausted=all_grid_completed,
             cancelled=is_cancelled,
         )
 
-        # 8. Build Canonical SearchResult
+        # Build Canonical SearchResult
         result = SearchResult(
             experiment_id=resolved_experiment_id,
             baseline_candidate_id=baseline_config.candidate_id,
@@ -332,7 +589,7 @@ class GridSearchController:
             stopping_reason=stopping_reason,
         )
 
-        # 9. Persist search_result.json to disk atomically
+        # Persist search_result.json to disk atomically
         result_path = resolved_output_dir / "search_result.json"
         result_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
 

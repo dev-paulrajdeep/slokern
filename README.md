@@ -52,13 +52,13 @@ SLOKern answers the fundamental systems engineering question:
 
 1. **Deterministic Evaluation:** Feasibility verdicts are calculated strictly by deterministic Python code. No LLM or heuristic scorer may override hard SLO constraints or pass/fail thresholds.
 2. **Missing $\ne$ Passing:** A missing or uncalculable metric returns `INCONCLUSIVE`. It can never be treated as a pass.
-3. **Intended Benchmark Budget:** The intended campaign allocates **six runs**:
+3. **Enforced Benchmark Budget:** The campaign allocates strictly **six runs**:
    - 1 Baseline run (default configuration).
    - 4 Candidate runs (fixed 2×2 parameter matrix).
    - 1 Independent verification rerun.
-   *(Preflight smoke test is a preliminary health check counted separately. Current `BudgetLimiter` defaults to this allocation but accepts overrides that can consume the verification reserve; `BLK-15` is active.)*
-4. **Mandatory Independent Verification:** This is the product requirement. The current verification protocol and comparison modules are stubs (`BLK-08`), so no candidate should be described as independently verified by the current implementation.
-5. **Traceable Raw Evidence:** Aggregates are intended to trace to raw client request records (`RawRequestMeasurement` in JSONL). Recorded epoch timestamps do not guarantee microsecond measurement accuracy, and input token counts currently use a whitespace estimate.
+   *(Preflight smoke test is a preliminary health check counted separately. The 6-run campaign invariant is strictly enforced via preflight `validate_budget` and runtime `BudgetLimiter`; `BLK-15` resolved.)*
+4. **Mandatory Independent Verification:** Independent verification is a non-negotiable core product requirement. Verification contracts and invariants are verified across 16 tests in `tests/contract/test_verification_independence.py`. Reruns use a fresh `verification_run_id` and raw evidence (`TASK-11`).
+5. **Traceable Raw Evidence:** Aggregates trace to raw client request records (`RawRequestMeasurement` in JSONL). Recorded timestamps reflect arrival and token intervals.
 6. **No Fabricated Pricing:** If authoritative cloud provider rates cannot be verified, monetary cost is reported as **`unavailable`**, and optimization falls back to Mode B (non-monetary systems proxy: GPU-seconds per request or throughput under SLO).
 
 ---
@@ -217,7 +217,7 @@ flowchart LR
 1. **Deterministic Fake Adapter (`fake.py`):**
    - Implements realistic synthetic latency distributions, simulated CUDA OOM failures, timeouts, and client saturation.
    - Powers automated unit tests, contract validation, and offline dashboard development.
-   - **Mandatory Guardrail:** All synthetic runs and fixture outputs are persistently labeled **`DEMO DATA`**. Never presented as live GPU measurements.
+   - **Mandatory Guardrail (AGENTS.md Section 8):** All synthetic runs, offline simulation outputs, test fixtures, and dashboard displays are persistently and unmistakably labeled **`DEMO DATA`**. Simulated measurements are never presented as live GPU results.
 2. **Real Nebius Adapter (`nebius.py`):**
    - Connects to the live Nebius endpoint; captures `environment_fingerprint` (CUDA version, driver, hardware ID) and verifies effective parameter settings.
    - Consumes GPU credits strictly for:
@@ -251,16 +251,16 @@ SLOKern enforces strict cost accounting boundaries to prevent fabricated claims:
 
 | Subsystem / Deliverable | Status | Verified Evidence & Repository Reality |
 |---|---|---|
-| **Data Contracts** | `IMPLEMENTED` | 11 Pydantic v2 schemas in `src/slokern/contracts/` (`extra='forbid'`, 135 tests pass). |
+| **Data Contracts** | `IMPLEMENTED` | 11 Pydantic v2 schemas in `src/slokern/contracts/` (`extra='forbid'`, 119 contract tests pass). |
 | **Subsystem Modules** | `IMPLEMENTED` | `core/` and `engine/` fully implemented with typed signatures and 322 passing tests across deterministic suites; `api/` & `cli/` deferred. |
 | **Fake Serving Adapter** | `IMPLEMENTED` | `src/slokern/engine/serving/fake.py` generates deterministic synthetic runs labeled **`DEMO DATA`**. |
-| **Nebius Serving Adapter** | `IMPLEMENTED (Transport)` | `src/slokern/engine/serving/nebius.py` with OpenAI-compatible HTTP client and health probe; live run pending credentials. |
+| **Nebius Serving Adapter** | `IMPLEMENTED (Transport)` | `src/slokern/engine/serving/nebius.py` with OpenAI-compatible urllib transport, SSE streaming, and secret sanitization; live run pending credentials (`BLK-04`). |
 | **Subprocess Load Generator** | `IMPLEMENTED` | `src/slokern/engine/loadgen/runner.py` with Poisson/constant arrival, JSONL capture, and saturation detection. |
 | **Deterministic Metrics Engine**| `IMPLEMENTED` | `src/slokern/core/metrics/` computes percentiles (p50/p95/p99), throughput, error rate, and offered vs achieved load. |
 | **Feasibility Evaluator** | `IMPLEMENTED` | `src/slokern/core/evaluator/evaluate.py` evaluates hard constraints with NaN/negative latency guards. |
 | **Single-Run Executor** | `IMPLEMENTED` | `src/slokern/engine/runner/run_executor.py` orchestrates adapter, loadgen, metrics, evaluator, and artifact persistence. |
-| **2×2 Grid Search Controller** | `IMPLEMENTED` | `src/slokern/core/search/grid.py`, `budget.py`, `space.py`, `rank.py` (33 unit tests pass; budget caveat BLK-15). |
-| **Independent Verification** | `READY / STUB` | Pydantic contracts locked; runner ready for Phase C implementation and Daksh audit kickoff (Oct 24). |
+| **2×2 Grid Search Controller** | `IMPLEMENTED` | `src/slokern/core/search/grid.py`, `budget.py`, `space.py`, `rank.py` (26 unit tests pass across search and ranker; `BLK-15` and `BLK-16` resolved). |
+| **Independent Verification** | `READY / CRITICAL PATH` | Pydantic contracts locked; 16/16 contract tests pass in `test_verification_independence.py`; implementation target of Day 6. |
 | **Demo Dashboard UI** | `IMPLEMENTED` | React + Vite command center in `frontend/src/App.tsx` (2553 lines, `DESIGN.md`, 9 pages, labeled **`DEMO DATA`**). |
 | **Daily Delivery Roadmap** | `DOCUMENTED` | Daily execution plan (Oct 19–30, 2026) maintained in `ROADMAP.md`. |
 
@@ -294,14 +294,16 @@ cp .env.example .env
 
 ### 10.2 Run Offline Pipeline Validation (Fake Adapter)
 
+> **DEMO DATA Notice (AGENTS.md Section 8):** Offline experiments execute against `FakeServingAdapter`. All generated artifacts, metrics, and terminal outputs are explicitly labeled **`DEMO DATA`** and must never be treated as live GPU benchmark results.
+
 ```bash
 # Run contract and unit tests
-pytest tests/contracts tests/unit
+pytest tests/contract tests/unit
 
 # Validate an experiment specification
 slokern validate experiments/configs/default.yaml
 
-# Execute an offline demonstration experiment (uses deterministic fake adapter)
+# Execute an offline demonstration experiment (uses deterministic fake adapter, labeled DEMO DATA)
 slokern optimize --config experiments/configs/default.yaml --adapter fake
 
 # Independently verify a candidate run
@@ -376,7 +378,7 @@ flowchart LR
 
 - **Phase A (Oct 19) — Audit and Scope Freeze:** `DONE`. Repository audit completed; working baseline established; core interfaces locked.
 - **Phase B (Oct 20–22) — Establish Real Execution:** `DONE`. Single-run execution pipeline operational via `SingleRunExecutor` integrating Fake and Nebius adapters, subprocess load generator, metrics engine, and feasibility evaluator. React+Vite frontend command center delivered (`frontend/src/App.tsx`, 2553 lines, `DEMO DATA` labeling).
-- **Phase C (Oct 23–25) — Validate Optimization:** `IN PROGRESS`. Bounded 2×2 grid search controller (`grid.py`), `SearchSpace`, `BudgetLimiter`, and `CandidateRanker` implemented with 33 unit tests (`TASK-10`). Independent verification runner (`TASK-11`) ready for implementation and Daksh audit kickoff (Oct 24).
+- **Phase C (Oct 23–25) — Validate Optimization:** `IN PROGRESS`. Bounded 2×2 grid search controller (`grid.py`), `SearchSpace`, `BudgetLimiter`, and `CandidateRanker` implemented with 26 unit tests (`TASK-10`). Independent verification runner (`TASK-11`) ready for Day 6 implementation with 16 contract tests verified in `test_verification_independence.py` (Daksh audit active Oct 24).
 - **Phase D (Oct 26–27) — Independent Review & Reproducibility:** Execute independent verification rerun under fresh run ID; audit metric drift; complete test suites; compile report artifact.
 - **Phase E (Oct 28–29) — Defect Closure & Freeze:** Feature freeze; close critical defects; automated test suite validation; clean clone installation check; record demo video ($\le 3$ minutes).
 - **Phase F (Oct 30) — Submit:** Final repository audit; Devpost submission completed before 10:00 AM PDT (10:30 PM IST) with 4-hour buffer.

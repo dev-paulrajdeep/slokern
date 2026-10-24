@@ -188,3 +188,11 @@ def test_nebius_generate_http_error_redaction(mock_urlopen):
     assert resp.status_code == 401
     assert "secret_abc_12345" not in resp.error
     assert "***REDACTED***" in resp.error
+
+
+def test_nebius_cloud_adapter_alias():
+    from slokern.engine.serving.nebius import NebiusCloudAdapter
+    assert NebiusCloudAdapter is NebiusServingAdapter
+    adapter = NebiusCloudAdapter(api_key="key-test")
+    assert isinstance(adapter, NebiusServingAdapter)
+    assert adapter.has_api_key is True

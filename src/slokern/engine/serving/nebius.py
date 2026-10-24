@@ -465,3 +465,7 @@ class NebiusServingAdapter(BaseServingAdapter):
                 error=sanitized_err,
                 metadata={"provider": "nebius", "live": True},
             )
+
+
+# Backward compatibility alias for scaffold callers
+NebiusCloudAdapter = NebiusServingAdapter

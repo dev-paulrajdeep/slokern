@@ -3,6 +3,7 @@ Purpose: Deterministic ranking of feasible candidates by the declared objective.
 Owner: Rohan
 """
 
+import math
 from typing import List, Optional
 from dataclasses import dataclass
 
@@ -26,10 +27,23 @@ def rank_candidates(
     Filters feasible candidates and ranks them according to the given objective.
     Tie-breaking: if metric values are equal, sort by candidate_id to be deterministic.
     """
-    feasible_candidates = [
-        c for c in evaluated_candidates
-        if c.verdict == FeasibilityVerdict.FEASIBLE
-    ]
+    feasible_candidates = []
+    for candidate in evaluated_candidates:
+        if candidate.verdict != FeasibilityVerdict.FEASIBLE:
+            continue
+        value = candidate.ranking_metric
+        if (
+            value is None
+            or isinstance(value, bool)
+            or not isinstance(value, (int, float))
+        ):
+            continue
+        try:
+            if not math.isfinite(value) or value < 0:
+                continue
+        except OverflowError:
+            continue
+        feasible_candidates.append(candidate)
 
     # Determine sorting direction.
     # Cost and time should be minimized (ascending).
@@ -40,14 +54,9 @@ def rank_candidates(
         RankingObjective.GPU_SECONDS_PER_REQUEST
     ]
 
-    # Sort
-    # Missing metrics sort after numeric metrics, but candidates are not removed.
-    # Consequently a candidate with no objective evidence can still appear in the
-    # returned list (and can be selected if every feasible candidate lacks a value).
-    # See BLK-16; callers must not treat this ordering alone as proof of rankability.
     feasible_candidates.sort(
         key=lambda c: (
-            c.ranking_metric if minimize and c.ranking_metric is not None else float('inf') if minimize else -c.ranking_metric if c.ranking_metric is not None else float('inf'),
+            c.ranking_metric if minimize else -c.ranking_metric,
             c.candidate_id
         )
     )

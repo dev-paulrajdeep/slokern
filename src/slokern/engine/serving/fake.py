@@ -70,7 +70,7 @@ def _build_default_capabilities(runtime_name: str) -> RuntimeCapabilities:
                 param_type="int",
                 default=2048,
                 min_value=128,
-                max_value=32768,
+                max_value=65536,
                 description="Maximum number of batched tokens per iteration"
             ),
             "gpu_memory_utilization": ParameterSpec(

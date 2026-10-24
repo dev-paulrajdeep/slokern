@@ -1,0 +1,4 @@
+# Orchestrator Workspace
+
+Working directory for `teamwork_preview_orchestrator` (orchestrator_2).
+

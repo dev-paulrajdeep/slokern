@@ -1,6 +1,32 @@
 import pytest
 from slokern.core.search.rank import rank_candidates, EvaluatedCandidate
 from slokern.contracts.enums import FeasibilityVerdict, RankingObjective
+from slokern.contracts.metrics import MetricSet, PercentileDistribution
+from slokern.core.search.rank import EvaluatedCandidate, rank_candidates
+from slokern.core.search.space import validate_candidate_settings
+
+
+def make_metrics():
+    return MetricSet(
+        metric_version="1.0",
+        run_id="run-test",
+        sample_count=1,
+        failed_request_count=0,
+        offered_load_rps=1.0,
+        achieved_load_rps=1.0,
+        generator_saturated=False,
+        ttft_ms=PercentileDistribution(),
+        itl_ms=PercentileDistribution(),
+        e2e_latency_ms=PercentileDistribution(),
+        request_throughput_rps=1.0,
+        token_throughput_tps=10.0,
+        error_rate=0.0,
+    )
+
+
+def candidate(candidate_id, ranking_metric, verdict=FeasibilityVerdict.FEASIBLE):
+    return EvaluatedCandidate(candidate_id, verdict, ranking_metric, make_metrics())
+
 
 # flake8: noqa: E501,F401,F811,E402,E302,E305,W293
 from slokern.contracts.metrics import MetricSet, PercentileDistribution

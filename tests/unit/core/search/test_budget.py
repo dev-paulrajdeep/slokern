@@ -44,11 +44,11 @@ def test_validate_budget_valid():
 
 def test_validate_budget_invalid_candidates():
     spec = create_mock_spec(max_candidates=0, repetitions=1)
-    with pytest.raises(BudgetValidationError, match="max_candidates must be >= 1"):
+    with pytest.raises(BudgetValidationError, match="budget.max_candidates must be >= 1"):
         validate_budget(spec)
 
 
 def test_validate_budget_invalid_repetitions():
     spec = create_mock_spec(max_candidates=4, repetitions=0)
-    with pytest.raises(BudgetValidationError, match="repetitions must be >= 1"):
+    with pytest.raises(BudgetValidationError, match="budget.verification_policy.repetitions must be >= 1"):
         validate_budget(spec)

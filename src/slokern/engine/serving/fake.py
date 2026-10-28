@@ -4,26 +4,27 @@ Owner: Rajdeep (Historical design: Aman)
 Authority: Aligned with AGENTS.md Section 1, Section 8, and docs/adr/0001-mvp-scope-and-evidence.md
 """
 
-from typing import Dict, Any, List, Optional, Iterator, AsyncIterator, Union
+import asyncio
 import random
 import time
-import asyncio
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from slokern.contracts.config import CandidateConfig
 from slokern.contracts.enums import ParameterStatus
-from slokern.engine.serving.capabilities import RuntimeCapabilities, ParameterSpec
 from slokern.engine.serving.base import (
     BaseServingAdapter,
-    ServingRequest,
-    TokenChunk,
-    ServingResponse,
     ConfigurationError,
-    ServingOOMError,
-    ServingTimeoutError,
-    ServingServerError,
     ServingAdapterError,
+    ServingOOMError,
+    ServingRequest,
+    ServingResponse,
+    ServingServerError,
+    ServingTimeoutError,
+    TokenChunk,
 )
+from slokern.engine.serving.capabilities import ParameterSpec, RuntimeCapabilities
 
 DEMO_WORDS: List[str] = [
     "This", "is", "a", "deterministic", "simulated", "inference", "response",
@@ -353,10 +354,11 @@ class FakeServingAdapter(BaseServingAdapter):
     def generate(
         self,
         request: Union[ServingRequest, str],
-        simulate_delay: Optional[bool] = None
+        **kwargs: Any
     ) -> ServingResponse:
         """Executes a synchronous request generation and returns complete ServingResponse."""
         req = self._normalize_request(request)
+        simulate_delay = kwargs.get('simulate_delay', None)
         should_delay = self.simulate_delay if simulate_delay is None else simulate_delay
 
         # Estimate input tokens
@@ -423,8 +425,10 @@ class FakeServingAdapter(BaseServingAdapter):
             }
         )
 
-    def stream_generate(self, request: Union[ServingRequest, str]) -> Iterator[TokenChunk]:
+    def stream_generate(self, request: Union[ServingRequest, str], **kwargs: Any) -> Iterator[TokenChunk]:
         """Streams token chunks for an inference request."""
+        simulate_delay = kwargs.get('simulate_delay', None)
+        should_delay = self.simulate_delay if simulate_delay is None else simulate_delay
         req = self._normalize_request(request)
 
         words = req.prompt.strip().split() if req.prompt.strip() else []
@@ -460,7 +464,7 @@ class FakeServingAdapter(BaseServingAdapter):
         tokens_text = [DEMO_WORDS[i % len(DEMO_WORDS)] for i in range(output_tokens)]
 
         # Chunk 0: TTFT
-        if self.simulate_delay:
+        if should_delay:
             time.sleep(ttft_ms / 1000.0)
 
         yield TokenChunk(
@@ -478,7 +482,7 @@ class FakeServingAdapter(BaseServingAdapter):
         for i in range(1, output_tokens):
             chunk_lat = itl_obs[i - 1]
             elapsed = round(elapsed + chunk_lat, 2)
-            if self.simulate_delay:
+            if should_delay:
                 time.sleep(chunk_lat / 1000.0)
 
             yield TokenChunk(
@@ -495,11 +499,16 @@ class FakeServingAdapter(BaseServingAdapter):
     async def agenerate(self, request: Union[ServingRequest, str]) -> ServingResponse:
         """Asynchronous request generation for synthetic adapter."""
         req = self._normalize_request(request)
-        return self.generate(req)
+        resp = self.generate(req, simulate_delay=False)
+        if self.simulate_delay and resp.total_latency_ms is not None:
+            await asyncio.sleep(resp.total_latency_ms / 1000.0)
+        return resp
 
     async def astream_generate(self, request: Union[ServingRequest, str]) -> AsyncIterator[TokenChunk]:
         """Asynchronous streaming token generation."""
         req = self._normalize_request(request)
-        for chunk in self.stream_generate(req):
+        for chunk in self.stream_generate(req, simulate_delay=False):
+            if self.simulate_delay and chunk.latency_ms is not None:
+                await asyncio.sleep(chunk.latency_ms / 1000.0)
             yield chunk
 

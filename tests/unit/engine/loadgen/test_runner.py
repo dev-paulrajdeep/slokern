@@ -5,14 +5,15 @@ Owner: Rajdeep (Historical design: Adriraj)
 
 import asyncio
 from pathlib import Path
+
 import pytest
 
 from slokern.contracts.enums import ArrivalMode
-from slokern.contracts.evidence import RawRequestMeasurement
 from slokern.contracts.spec import WorkloadSpec
 from slokern.engine.loadgen.recorder import JSONLRecorder
-from slokern.engine.loadgen.runner import LoadGeneratorRunner, LoadGeneratorResult
+from slokern.engine.loadgen.runner import LoadGeneratorResult, LoadGeneratorRunner
 from slokern.engine.serving.fake import FakeServingAdapter
+
 
 def _can_bind_and_connect_loopback() -> bool:
     import socket
@@ -272,7 +273,7 @@ def test_runner_arun_async_wrapper(tmp_path: Path):
 
 class _PartialFailureServingAdapter(FakeServingAdapter):
     """Emits 2 valid tokens and then yields an error chunk."""
-    def stream_generate(self, request):
+    def stream_generate(self, request, **kwargs):
         from slokern.engine.serving.base import TokenChunk
         yield TokenChunk(token="token1", token_id=1, index=0, timestamp_ms=10.0, latency_ms=10.0, is_last=False)
         yield TokenChunk(token="token2", token_id=2, index=1, timestamp_ms=20.0, latency_ms=10.0, is_last=False)
@@ -345,7 +346,7 @@ def test_saturation_triggered_by_concurrency_bottleneck(tmp_path: Path):
 
 class _CrashingServingAdapter(FakeServingAdapter):
     """Simulates hard subprocess abort via os._exit."""
-    def stream_generate(self, request):
+    def stream_generate(self, request, **kwargs):
         import os
         os._exit(42)
         yield from []

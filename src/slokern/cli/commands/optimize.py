@@ -102,6 +102,7 @@ def optimize_command(
         exp_dir = Path(output_dir or "artifacts") / "experiments" / spec.experiment_id
         exp_dir.mkdir(parents=True, exist_ok=True)
         (exp_dir / "search_result.json").write_text(search_res.model_dump_json(indent=2), encoding="utf-8")
+        (exp_dir / "experiment_spec.json").write_text(spec.model_dump_json(indent=2), encoding="utf-8")
 
         print("\n[OK] Optimization campaign completed successfully:")
         print(f"  Tested Candidates:    {len(search_res.tested_candidates)}")

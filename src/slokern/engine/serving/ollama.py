@@ -58,11 +58,73 @@ class StrictLoopbackRedirectHandler(urllib.request.HTTPRedirectHandler):
         return self.redirect_request(req, fp, code, msg, headers, self._extract_location(headers))
 
 
+_CACHED_GPU_INFO: Optional[Dict[str, Any]] = None
+
+
+def _probe_local_gpu() -> Dict[str, Any]:
+    """
+    Probes local GPU device name and total VRAM in MB.
+    Uses pynvml first, falling back to nvidia-smi query.
+    Caches result to avoid repeated subprocess calls.
+    """
+    global _CACHED_GPU_INFO
+    if _CACHED_GPU_INFO is not None:
+        return dict(_CACHED_GPU_INFO)
+
+    gpu_info: Dict[str, Any] = {}
+    # 1. Try pynvml
+    try:
+        import pynvml  # type: ignore
+
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        name = pynvml.nvmlDeviceGetName(handle)
+        if isinstance(name, bytes):
+            name = name.decode("utf-8", errors="replace")
+        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        gpu_info["gpu_device"] = str(name).strip()
+        gpu_info["vram_mb"] = int(mem.total // (1024 * 1024))
+        pynvml.nvmlShutdown()
+        _CACHED_GPU_INFO = gpu_info
+        return dict(gpu_info)
+    except Exception:
+        pass
+
+    # 2. Try nvidia-smi CLI
+    try:
+        import subprocess
+
+        res = subprocess.run(
+            ["nvidia-smi", "--query-gpu=gpu_name,memory.total", "--format=csv,noheader,nounits"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5.0,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            parts = [p.strip() for p in res.stdout.strip().split(",")]
+            if len(parts) >= 2:
+                gpu_info["gpu_device"] = parts[0]
+                try:
+                    gpu_info["vram_mb"] = int(float(parts[1]))
+                except ValueError:
+                    pass
+                _CACHED_GPU_INFO = gpu_info
+                return dict(gpu_info)
+    except Exception:
+        pass
+
+    if gpu_info:
+        _CACHED_GPU_INFO = gpu_info
+    return dict(gpu_info)
+
+
 def _build_ollama_capabilities(runtime_name: str, model_name: str) -> RuntimeCapabilities:
     """
     Defines declared runtime capabilities for local Ollama serving endpoint.
-    Process startup flags (max_num_batched_tokens, max_num_seqs) are omitted
-    to honestly report them as UNSUPPORTED per BLK-17 / DEC-0014.
+    Process startup flags (max_num_batched_tokens, max_num_seqs) remain omitted/unsupported,
+    while per-candidate options (num_batch, num_ctx) are declared and applied dynamically.
     """
     return RuntimeCapabilities(
         runtime_name=runtime_name,
@@ -83,6 +145,22 @@ def _build_ollama_capabilities(runtime_name: str, model_name: str) -> RuntimeCap
                 min_value=1,
                 max_value=4096,
                 description="Maximum output tokens to generate (num_predict)",
+            ),
+            "num_batch": ParameterSpec(
+                name="num_batch",
+                param_type="int",
+                default=512,
+                min_value=1,
+                max_value=8192,
+                description="Batch size for prompt evaluation (tokens evaluated simultaneously in parallel)",
+            ),
+            "num_ctx": ParameterSpec(
+                name="num_ctx",
+                param_type="int",
+                default=2048,
+                min_value=128,
+                max_value=32768,
+                description="Context window size and KV cache allocation",
             ),
         },
         supports_streaming=True,
@@ -106,7 +184,7 @@ class OllamaServingAdapter(BaseServingAdapter):
         model_name: Optional[str] = None,
         runtime_name: str = "ollama",
         base_url: Optional[str] = None,
-        timeout_s: float = 30.0,
+        timeout_s: float = 60.0,
         allow_remote: bool = False,
         capabilities: Optional[RuntimeCapabilities] = None,
     ) -> None:
@@ -115,7 +193,8 @@ class OllamaServingAdapter(BaseServingAdapter):
 
         raw_url = base_url or os.environ.get("OLLAMA_BASE_URL", self.DEFAULT_BASE_URL)
         self.base_url = self._validate_and_normalize_url(raw_url, allow_remote=allow_remote)
-        self.timeout_s = timeout_s
+        env_timeout = os.environ.get("OLLAMA_TIMEOUT_S")
+        self.timeout_s = float(env_timeout) if env_timeout else timeout_s
         self.capabilities = capabilities or _build_ollama_capabilities(runtime_name, resolved_model)
         self._opener = urllib.request.build_opener(StrictLoopbackRedirectHandler())
 
@@ -176,7 +255,7 @@ class OllamaServingAdapter(BaseServingAdapter):
     def get_environment_fingerprint(self) -> Dict[str, Any]:
         """Returns local hardware/runtime environment documentation."""
         parsed = urllib.parse.urlsplit(self.base_url)
-        return {
+        fp: Dict[str, Any] = {
             "provider": "ollama",
             "endpoint_host": parsed.netloc or "127.0.0.1:11434",
             "runtime_name": self.runtime_name,
@@ -184,6 +263,10 @@ class OllamaServingAdapter(BaseServingAdapter):
             "is_simulated": False,
             "security_boundary": "strict_loopback",
         }
+        gpu = _probe_local_gpu()
+        if gpu:
+            fp.update(gpu)
+        return fp
 
     def check_readiness(self) -> Dict[str, Any]:
         """
@@ -357,6 +440,13 @@ class OllamaServingAdapter(BaseServingAdapter):
         endpoint = f"{self.base_url}/api/chat"
 
         options: Dict[str, Any] = {}
+        if self._current_config and self._current_config.effective_settings:
+            eff = self._current_config.effective_settings
+            if "num_batch" in eff and eff["num_batch"] is not None:
+                options["num_batch"] = int(eff["num_batch"])
+            if "num_ctx" in eff and eff["num_ctx"] is not None:
+                options["num_ctx"] = int(eff["num_ctx"])
+
         if req.temperature is not None:
             options["temperature"] = req.temperature
         if req.max_tokens is not None:
@@ -496,6 +586,13 @@ class OllamaServingAdapter(BaseServingAdapter):
         endpoint = f"{self.base_url}/api/chat"
 
         options: Dict[str, Any] = {}
+        if self._current_config and self._current_config.effective_settings:
+            eff = self._current_config.effective_settings
+            if "num_batch" in eff and eff["num_batch"] is not None:
+                options["num_batch"] = int(eff["num_batch"])
+            if "num_ctx" in eff and eff["num_ctx"] is not None:
+                options["num_ctx"] = int(eff["num_ctx"])
+
         if req.temperature is not None:
             options["temperature"] = req.temperature
         if req.max_tokens is not None:

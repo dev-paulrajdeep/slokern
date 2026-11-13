@@ -58,6 +58,8 @@ class ExperimentVerificationPolicy(BaseModel):
 
     repetitions: int = Field(default=1, description="Number of verification repetitions")
     duration_multiplier: float = Field(default=1.0, description="Multiplier for measurement duration during verification")
+    latency_relative_tolerance: Optional[float] = Field(None, description="Custom relative tolerance percentage for latency drift")
+    min_absolute_latency_drift_ms: Optional[float] = Field(None, description="Absolute latency floor in ms below which drift is not flagged as failure")
 
 
 class ExperimentSpec(BaseModel):

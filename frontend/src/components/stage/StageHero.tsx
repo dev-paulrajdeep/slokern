@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Badge } from '../common/Badge';
 import type { HeadroomResult } from '../../lib/format';
 import type { VerificationDerivationResult } from '../../lib/status';
+import { buildVllmLaunchFlags } from '../../lib/vllm';
 
 interface StageHeroProps {
   candidateName: string;
@@ -12,6 +13,8 @@ interface StageHeroProps {
   throughputDelta?: string;
   onOpenDetails?: () => void;
   onReplay?: () => void;
+  onCopyFlags?: () => void;
+  vllmFlags?: string;
 }
 
 export const StageHero: React.FC<StageHeroProps> = ({
@@ -23,92 +26,105 @@ export const StageHero: React.FC<StageHeroProps> = ({
   throughputDelta = '+41.1% throughput vs baseline',
   onOpenDetails,
   onReplay,
+  onCopyFlags,
+  vllmFlags,
 }) => {
+  const [copied, setCopied] = useState(false);
   const isPassing = bindingHeadroom ? bindingHeadroom.isPassing : verificationStatus.isVerifiedWinner;
   const absHeadroom = bindingHeadroom ? Math.abs(bindingHeadroom.absoluteHeadroom).toFixed(1) : '3.0';
   const unit = bindingHeadroom?.unit || 'ms';
+  const constraintMetricName = bindingHeadroom?.constraintName || 'P95 TTFT';
   const constraintLabel = bindingHeadroom
     ? `${bindingHeadroom.constraintName} (${bindingHeadroom.threshold} ${unit} CEILING)`
     : 'P95 TTFT (50 ms CEILING)';
 
+  const measuredValue = bindingHeadroom?.measured ?? (isPassing ? 47.0 : 53.0);
+  const ceilingValue = bindingHeadroom?.threshold ?? 50.0;
+  const maxScale = Math.max(ceilingValue * 1.35, measuredValue * 1.15, 1);
+  const measuredPct = Math.min(100, Math.max(0, (measuredValue / maxScale) * 100));
+  const ceilingPct = Math.min(100, Math.max(0, (ceilingValue / maxScale) * 100));
+
+  const resolvedFlags =
+    vllmFlags ||
+    buildVllmLaunchFlags({
+      id: candidateId,
+      name: candidateName,
+      concurrency: 32,
+      batch: 4,
+      kvCache: 'AUTO',
+    } as any);
+
+  const handleCopy = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(resolvedFlags).catch(() => {});
+    }
+    setCopied(true);
+    onCopyFlags?.();
+    setTimeout(() => setCopied(false), 2200);
+  };
+
+  const statusClass = verificationStatus.isVerifiedWinner
+    ? 'winner-status'
+    : verificationStatus.statusType === 'infeasible'
+      ? 'infeasible-status'
+      : 'pending-status';
+
   return (
     <section
-      className="stage-hero"
-      style={{
-        padding: '32px 36px',
-        backgroundColor: 'var(--surface, #0E120F)',
-        border: '1px solid',
-        borderColor: verificationStatus.isVerifiedWinner
-          ? 'var(--border-strong, #384635)'
-          : 'var(--border, #263124)',
-        borderRadius: '8px',
-        position: 'relative',
-        overflow: 'hidden',
-        boxShadow: verificationStatus.isVerifiedWinner ? 'var(--glow-winner)' : 'none',
-      }}
+      className={`stage-hero stage-hero-container ${statusClass}`}
       aria-label="Optimization Outcome Summary"
     >
-      {/* Top Meta Line: Badges + Candidate Info */}
-      <div className="stage-meta-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      {/* Top Meta Line: Badges + Candidate Info + Quick Actions */}
+      <div className="stage-meta-bar">
+        <div className="stage-meta-info">
           <Badge tone={verificationStatus.statusType} size="md">
             {verificationStatus.badgeLabel}
           </Badge>
-          <span
-            style={{
-              fontSize: '13px',
-              fontFamily: 'var(--font-mono, monospace)',
-              fontWeight: 600,
-              color: 'var(--text-primary, #F0F3EF)',
-            }}
-          >
+          <span className="stage-candidate-title">
             {candidateId} · {candidateName}
           </span>
           <span style={{ fontSize: '12px', color: 'var(--text-muted, #727D73)' }}>|</span>
-          <span style={{ fontSize: '12px', color: 'var(--text-secondary, #A0AAA0)', fontFamily: 'var(--font-mono, monospace)' }}>
+          <span className="stage-candidate-model">
             {runtimeModel}
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {onReplay && verificationStatus.isVerifiedWinner && (
+        <div className="stage-meta-actions">
+          {/* Quick-action trigger: Copy vLLM flags pill */}
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="action-toolbar-btn"
+            style={{ padding: '4px 10px', fontSize: '11px', gap: '6px' }}
+            title="Copy vLLM CLI launch flags for this candidate (Hotkey: C)"
+            aria-label="Copy vLLM flags"
+          >
+            <span className="keycap-badge">C</span>
+            <span>{copied ? 'Copied Flags ✓' : 'Copy vLLM flags'}</span>
+          </button>
+
+          {/* Quick-action trigger: Replay Reveal (R) */}
+          {onReplay && (
             <button
               type="button"
               onClick={onReplay}
-              title="Replay reveal sequence (Hotkey: R)"
+              className="action-toolbar-btn"
+              style={{ padding: '4px 10px', fontSize: '11px', gap: '6px' }}
+              title="Replay verified reveal sequence (Hotkey: R)"
               aria-label="Replay reveal animation"
-              style={{
-                background: 'none',
-                border: '1px solid var(--border, #263124)',
-                backgroundColor: 'transparent',
-                color: 'var(--text-secondary, #A0AAA0)',
-                fontSize: '11px',
-                fontFamily: 'var(--font-mono, monospace)',
-                padding: '4px 8px',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
             >
-              Replay ↻
+              <span className="keycap-badge">R</span>
+              <span>Replay ↻</span>
             </button>
           )}
 
+          {/* Inspect Parameters & Artifacts */}
           {onOpenDetails && (
             <button
               type="button"
               onClick={onOpenDetails}
-              style={{
-                background: 'none',
-                border: '1px solid var(--border-strong, #384635)',
-                backgroundColor: 'var(--raised, #151B15)',
-                color: 'var(--text-primary, #F0F3EF)',
-                fontSize: '12px',
-                fontFamily: 'var(--font-mono, monospace)',
-                fontWeight: 600,
-                padding: '4px 12px',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
+              className="action-toolbar-btn primary"
+              style={{ padding: '4px 12px', fontSize: '12px' }}
             >
               Inspect Parameters & Artifacts →
             </button>
@@ -116,80 +132,61 @@ export const StageHero: React.FC<StageHeroProps> = ({
         </div>
       </div>
 
-      {/* Hero Headroom Numeral (Apple-grade Stage Scale) */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' }}>
-        <div
-          className="stage-numeral tabular-nums"
-          style={{
-            fontSize: 'var(--text-stage, clamp(56px, 11vw, 136px))',
-            fontWeight: 800,
-            lineHeight: 0.95,
-            letterSpacing: '-0.04em',
-            fontFamily: 'var(--font-mono, monospace)',
-            color: isPassing ? 'var(--primary-bright, #95D500)' : 'var(--error, #FF5555)',
-            textShadow: isPassing ? '0 0 24px rgba(118, 185, 0, 0.25)' : 'none',
-          }}
-        >
+      {/* Hero Headroom Numeral (Apple-grade Monospace Stage Scale) */}
+      <div className="stage-headroom-row">
+        <div className={`stage-numeral hero-headroom-value ${isPassing ? '' : 'breach'} tabular-nums`}>
           {isPassing ? `+${absHeadroom}` : `-${absHeadroom}`}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span
-            style={{
-              fontSize: 'clamp(20px, 3.5vw, 36px)',
-              fontWeight: 700,
-              fontFamily: 'var(--font-mono, monospace)',
-              color: 'var(--text-primary, #F0F3EF)',
-            }}
-          >
+        <div className="stage-headroom-meta">
+          <span className="hero-unit-numeral">
             {unit}
           </span>
-          <span
-            style={{
-              fontSize: '12px',
-              fontWeight: 600,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              color: 'var(--text-muted, #727D73)',
-              fontFamily: 'var(--font-mono, monospace)',
-            }}
-          >
-            {isPassing ? 'HEADROOM ON' : 'BREACH ON'} {constraintLabel}
+          <span className="hero-headroom-subtext">
+            {isPassing ? 'HEADROOM WON UNDER' : 'BREACH OVER'} {constraintLabel}
           </span>
         </div>
       </div>
 
+      {/* Dynamic Binding Constraint Gauge (Comparing actual performance against SLA ceiling) */}
+      <div className="stage-binding-gauge">
+        <div className="stage-binding-gauge-header">
+          <div className="stage-binding-gauge-title">
+            <span className={`hero-constraint-badge ${isPassing ? '' : 'breach'}`}>
+              BINDING CONSTRAINT
+            </span>
+            <span className="stage-binding-gauge-lead">
+              {absHeadroom} {unit} {constraintMetricName} {isPassing ? 'headroom won under' : 'breach over'} {ceilingValue} {unit} SLA ceiling
+            </span>
+          </div>
+
+          <div className="stage-binding-gauge-telemetry">
+            Observed: <strong style={{ color: isPassing ? 'var(--primary-bright, #95D500)' : 'var(--error, #FF5555)' }}>{measuredValue.toFixed(1)} {unit}</strong> / Ceiling: {ceilingValue.toFixed(1)} {unit}
+          </div>
+        </div>
+
+        {/* Hairline constraint bar */}
+        <div className="stage-binding-gauge-track">
+          {/* Measured Fill */}
+          <div
+            className={`stage-binding-gauge-fill ${isPassing ? 'passing' : 'breach'}`}
+            style={{ width: `${measuredPct}%` }}
+          />
+          {/* Declared SLA Ceiling hairline marker */}
+          <div
+            className="stage-binding-gauge-ceiling"
+            style={{ left: `${ceilingPct}%` }}
+            title={`Declared SLA Ceiling: ${ceilingValue} ${unit}`}
+          />
+        </div>
+      </div>
+
       {/* Bottom Summary Callout */}
-      <div
-        style={{
-          marginTop: '20px',
-          paddingTop: '16px',
-          borderTop: '1px solid var(--border, #263124)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px',
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            fontSize: '13px',
-            color: 'var(--text-secondary, #A0AAA0)',
-            lineHeight: 1.4,
-          }}
-        >
+      <div className="stage-summary-bar">
+        <p className="stage-summary-text">
           {verificationStatus.reasonText}
         </p>
 
-        <span
-          style={{
-            fontSize: '12px',
-            fontFamily: 'var(--font-mono, monospace)',
-            color: isPassing ? 'var(--primary-bright, #95D500)' : 'var(--text-muted, #727D73)',
-            fontWeight: 600,
-          }}
-        >
+        <span className={`stage-summary-delta ${isPassing ? 'passing' : 'muted'}`}>
           {throughputDelta}
         </span>
       </div>

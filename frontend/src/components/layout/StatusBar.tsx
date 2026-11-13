@@ -1,7 +1,7 @@
 import React from 'react';
 import { DemoDataChip } from '../common/DemoDataChip';
 
-export type ScenarioType = 'standard' | 'verification-failed' | 'no-feasible' | 'stale-evidence';
+export type ScenarioType = 'standard' | 'verification-pending' | 'verification-failed' | 'no-feasible' | 'stale-evidence';
 
 interface StatusBarProps {
   scenario: ScenarioType;
@@ -71,7 +71,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
             title="Switch deterministic demo scenario"
             aria-label="Demo Scenario Selector"
           >
-            <option value="standard">standard (C-02 Verified Winner)</option>
+            <option value="standard">standard (15594344 Verified Winner)</option>
+            <option value="verification-pending">verification-pending (Verification Pending)</option>
             <option value="verification-failed">verification-failed (Drift Breach)</option>
             <option value="no-feasible">no-feasible (All Breaching)</option>
             <option value="stale-evidence">stale-evidence (Clock Expired)</option>

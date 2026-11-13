@@ -21,7 +21,6 @@ from slokern.cli.commands.verify import verify_command
 from slokern.config.secrets import load_runtime_secrets
 
 
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="slokern",
@@ -78,6 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     opt_parser.add_argument(
         "--verify",
+        "--auto-verify",
+        dest="verify",
         action="store_true",
         help="Execute independent verification rerun (Run 6) immediately after candidate search.",
     )
@@ -149,6 +150,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    if sys.platform == "win32":
+        try:
+            if hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            if hasattr(sys.stderr, "reconfigure"):
+                sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     # Bootstrap discovered runtime secrets into environment early
     load_runtime_secrets()
 

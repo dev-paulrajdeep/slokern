@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "workload_name": "local-qwen3-chat-workload",
+  "fixture_id": "fix-qwen3-chat-01",
+  "arrival_mode": "constant",
+  "target_offered_rate": 1.5,
+  "concurrency_limit": 2,
+  "warmup_duration_s": 8,
+  "measurement_duration_s": 15,
+  "max_input_tokens": 128,
+  "max_output_tokens": 32
+}

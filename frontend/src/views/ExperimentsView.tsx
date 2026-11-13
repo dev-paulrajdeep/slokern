@@ -44,11 +44,21 @@ export const ExperimentsView: React.FC<ExperimentsViewProps> = ({
     return 'neutral';
   };
 
+  const getEvidenceTone = (ev?: string) => {
+    if (ev === 'LIVE') return 'verified';
+    if (ev === 'DEMO DATA') return 'demo';
+    return 'neutral';
+  };
+
   const getValidityTone = (v?: string) => {
     if (v === 'VALID') return 'neutral';
     if (v === 'STALE') return 'warning';
     return 'infeasible';
   };
+
+  const hasDemoData = experiments.some(
+    (e) => e.evidenceClassification === 'DEMO DATA' || (e as any).isSimulated
+  );
 
   return (
     <div className="view-experiments workspace-enter" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -59,7 +69,7 @@ export const ExperimentsView: React.FC<ExperimentsViewProps> = ({
             <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)', letterSpacing: '-0.025em', textWrap: 'balance' }}>
               Experiment Runs & Telemetry History
             </h1>
-            <DemoDataChip size="sm" />
+            {hasDemoData && <DemoDataChip size="sm" />}
           </div>
           <p style={{ margin: '6px 0 0', fontSize: '13px', color: 'var(--text-secondary, #A0AAA0)', lineHeight: 1.45, textWrap: 'pretty', maxWidth: '75ch' }}>
             Search runs, execution states, offered-vs-achieved load audits, and unaggregated trace evidence
@@ -148,6 +158,7 @@ export const ExperimentsView: React.FC<ExperimentsViewProps> = ({
                   <th style={{ padding: '10px 16px' }}>WORKLOAD</th>
                   <th style={{ padding: '10px 16px' }}>MODEL</th>
                   <th style={{ padding: '10px 16px' }}>CANDIDATE</th>
+                  <th style={{ padding: '10px 16px' }}>EVIDENCE</th>
                   <th style={{ padding: '10px 16px' }}>OFFERED / ACHIEVED</th>
                   <th style={{ padding: '10px 16px' }}>VALIDITY</th>
                   <th style={{ padding: '10px 16px' }}>SATURATION</th>
@@ -210,6 +221,11 @@ export const ExperimentsView: React.FC<ExperimentsViewProps> = ({
                       </td>
                       <td style={{ padding: '10px 16px', color: 'var(--text-primary, #F0F3EF)', fontWeight: 600 }}>
                         {exp.candidateId}
+                      </td>
+                      <td style={{ padding: '10px 16px' }}>
+                        <Badge tone={getEvidenceTone(exp.evidenceClassification)} size="sm">
+                          {exp.evidenceClassification ?? 'UNVERIFIED'}
+                        </Badge>
                       </td>
                       <td style={{ padding: '10px 16px', color: 'var(--text-primary, #F0F3EF)' }}>
                         <span>{reqRate?.toFixed(1) ?? '—'}</span>

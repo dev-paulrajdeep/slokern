@@ -210,7 +210,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
 
-              {!collapsed && (
+              {!collapsed ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {isActive && (
                     <span
@@ -223,20 +223,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       aria-hidden="true"
                     />
                   )}
-                  <kbd
-                    style={{
-                      fontSize: '11px',
-                      fontFamily: 'var(--font-mono, monospace)',
-                      color: 'var(--text-muted, #727D73)',
-                      backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                      padding: '1px 5px',
-                      borderRadius: '3px',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                    }}
-                  >
+                  <kbd className="keycap-badge" style={{ color: isActive ? 'var(--primary-bright, #95D500)' : 'var(--text-secondary, #A0AAA0)' }}>
                     {item.hotkey}
                   </kbd>
                 </div>
+              ) : (
+                <span
+                  className="keycap-badge"
+                  style={{
+                    position: 'absolute',
+                    top: '2px',
+                    right: '2px',
+                    fontSize: '11px',
+                    padding: '0 4px',
+                    opacity: isActive ? 1 : 0.7,
+                  }}
+                >
+                  {item.hotkey}
+                </span>
               )}
             </button>
           );

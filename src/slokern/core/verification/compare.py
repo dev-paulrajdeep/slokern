@@ -6,7 +6,7 @@ Authority: Aligned with AGENTS.md Section 5, 7, and DEC-0014
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, Literal, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from slokern.contracts.metrics import MetricSet
 from slokern.contracts.spec import SLOSpec
@@ -31,6 +31,19 @@ class DriftPolicy:
     throughput_relative_tolerance: float = -15.0
     error_rate_absolute_tolerance: float = 0.01
     custom_metric_tolerances: Dict[str, float] = field(default_factory=dict)
+    min_absolute_latency_drift_ms: float = 0.0
+
+    @classmethod
+    def from_verification_policy(cls, vpol: Optional[Any]) -> "DriftPolicy":
+        """Instantiates DriftPolicy from ExperimentVerificationPolicy or returns default."""
+        if vpol is None:
+            return cls()
+        kwargs: Dict[str, Any] = {}
+        if hasattr(vpol, "latency_relative_tolerance") and vpol.latency_relative_tolerance is not None:
+            kwargs["latency_relative_tolerance"] = float(vpol.latency_relative_tolerance)
+        if hasattr(vpol, "min_absolute_latency_drift_ms") and vpol.min_absolute_latency_drift_ms is not None:
+            kwargs["min_absolute_latency_drift_ms"] = float(vpol.min_absolute_latency_drift_ms)
+        return cls(**kwargs)
 
     def get_tolerance(self, metric_label: str) -> Tuple[float, Literal["relative_percentage", "absolute_difference"], str]:
         """Returns (tolerance_value, comparison_method, unit) for a given metric label."""
@@ -142,7 +155,11 @@ def _evaluate_single_metric_drift(
     else:
         # Latency degradation: delta > tolerance (e.g. +16.0% > +15.0% fails)
         # Strict boundary: delta > tolerance is a failure; delta == tolerance passes.
-        passed = rel_drift <= tolerance
+        if policy.min_absolute_latency_drift_ms > 0.0 and abs_drift <= policy.min_absolute_latency_drift_ms:
+            passed = True
+            failure_reason = None
+        else:
+            passed = rel_drift <= tolerance
         failure_reason = None if passed else f"Latency relative increase {rel_drift:g}% exceeds tolerance {tolerance:g}%"
 
     return delta, MetricDriftComparison(

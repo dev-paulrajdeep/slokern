@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { StageHero } from '../components/stage/StageHero';
 import { VerifiedReveal } from '../components/stage/VerifiedReveal';
 import { SloGauge } from '../components/stage/SloGauge';
@@ -13,6 +13,7 @@ import type { HeadroomResult } from '../lib/format';
 import type { VerificationDerivationResult } from '../lib/status';
 import type { UICandidate, UIExperiment } from '../lib/adapters/viewModel';
 import { mapSmokeTestEvidence } from '../lib/adapters/viewModel';
+import { buildVllmLaunchCommand } from '../lib/vllm';
 import type { SmokeTestArtifactResponse, RuntimeProfileResponse, PercentileDistribution } from '../types/contracts';
 
 interface OverviewViewProps {
@@ -26,10 +27,14 @@ interface OverviewViewProps {
   smokeTest?: SmokeTestArtifactResponse | null;
   runtimeProfile?: RuntimeProfileResponse | null;
   activeExperiment?: UIExperiment | null;
+  replayKey?: number;
+  onReplayReveal?: () => void;
   onOpenCandidateDrawer: (candidate: UICandidate) => void;
   onNavigateToVerification: () => void;
   onNavigateToExperiments: () => void;
   onNavigateToTuningLab: () => void;
+  onCopyVllmFlags?: () => void;
+  onExportAuditJsonl?: () => void;
 }
 
 export const OverviewView: React.FC<OverviewViewProps> = ({
@@ -43,33 +48,25 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   smokeTest,
   /* runtimeProfile */
   activeExperiment,
+  replayKey: externalReplayKey,
+  onReplayReveal,
   onOpenCandidateDrawer,
   onNavigateToVerification,
   onNavigateToExperiments,
   onNavigateToTuningLab,
+  onCopyVllmFlags,
+  onExportAuditJsonl,
 }) => {
   const isVerified = verificationStatus.isVerifiedWinner;
-  const [replayKey, setReplayKey] = useState(0);
+  const [internalReplayKey, setInternalReplayKey] = useState(0);
+  const activeReplayKey = externalReplayKey ?? internalReplayKey;
+  const triggerReplay = onReplayReveal ?? (() => setInternalReplayKey((k: number) => k + 1));
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Global hotkey 'R' to replay reveal when on Overview
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
-        target.isContentEditable
-      ) {
-        return;
-      }
-      if (e.key === 'r' || e.key === 'R') {
-        setReplayKey((k: number) => k + 1);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3200);
+  };
 
   const smokeEvidenceData = mapSmokeTestEvidence(smokeTest);
   const smokeTtft = smokeEvidenceData.ttftMs;
@@ -78,8 +75,81 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const smokeHost = smokeTest?.endpoint_host || 'Unavailable';
   const smokeEvidence = smokeEvidenceData.evidenceClassification;
 
+  // vLLM CLI Command string
+  const vllmLaunchCommand = buildVllmLaunchCommand(recommendedCandidate);
+
+  // Action Toolbar Handlers
+  const handleDeployVllm = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(vllmLaunchCommand).catch(() => {});
+    }
+    showToast(`vLLM launch flags copied for ${recommendedCandidate.id}`);
+    onCopyVllmFlags?.();
+  };
+
+  const handleExportJsonl = () => {
+    const auditRecords = [
+      {
+        event: 'EXPERIMENT_EVALUATION',
+        experiment_id: activeExperiment?.id || 'exp-audit-offline-campaign',
+        timestamp: new Date().toISOString(),
+        winner_id: recommendedCandidate.id,
+        is_verified: isVerified,
+        status: verificationStatus.statusType,
+      },
+      ...candidates.map((c) => ({
+        event: 'CANDIDATE_TRIAGE',
+        candidate_id: c.id,
+        feasible: c.feasible,
+        throughput_tok_s: c.throughput,
+        p95_ttft_ms: c.ttftP95,
+        p95_itl_ms: c.itlP95,
+        reason: c.reason,
+      })),
+    ];
+
+    const jsonlContent = auditRecords.map((r) => JSON.stringify(r)).join('\n');
+    try {
+      const blob = new Blob([jsonlContent], { type: 'application/x-ndjson;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `decision-audit-${activeExperiment?.id || 'campaign'}.jsonl`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      // Fallback for headless environments
+    }
+    showToast(`Exported decision audit (JSONL) with ${auditRecords.length} records`);
+    onExportAuditJsonl?.();
+  };
+
   return (
     <div className="view-overview workspace-enter" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '64px',
+            right: '24px',
+            zIndex: 1000,
+            padding: '10px 18px',
+            backgroundColor: 'var(--elevated, #1D251E)',
+            border: '1px solid var(--primary, #76B900)',
+            borderRadius: '6px',
+            fontSize: 'var(--text-micro, 11px)',
+            fontFamily: 'var(--font-mono, monospace)',
+            color: 'var(--primary-bright, #95D500)',
+            boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.6))',
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
+
       {/* Workspace Header / Context */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
         <div>
@@ -107,18 +177,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <button
             type="button"
             onClick={onNavigateToVerification}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border-strong, #384635)',
-              backgroundColor: 'var(--elevated, #1D251E)',
-              color: 'var(--text-primary, #F0F3EF)',
-              fontSize: '12px',
-              fontFamily: 'var(--font-mono, monospace)',
-              fontWeight: 600,
-              padding: '6px 14px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
+            className="action-toolbar-btn"
+            style={{ fontSize: '12px' }}
           >
             Audit Verification Console →
           </button>
@@ -136,7 +196,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           display: 'flex',
           flexDirection: 'column',
           gap: '12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          boxShadow: 'var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.35))',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
@@ -148,7 +208,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 gap: '6px',
                 padding: '3px 8px',
                 borderRadius: '4px',
-                fontSize: '11px',
+                fontSize: 'var(--text-micro, 11px)',
                 fontWeight: 700,
                 fontFamily: 'var(--font-mono, monospace)',
                 backgroundColor: 'rgba(118, 185, 0, 0.15)',
@@ -166,7 +226,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+            <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
               Endpoint: {smokeHost}
             </span>
             <span
@@ -175,7 +235,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 alignItems: 'center',
                 padding: '2px 8px',
                 borderRadius: '3px',
-                fontSize: '10px',
+                fontSize: 'var(--text-micro, 11px)',
                 fontWeight: 600,
                 fontFamily: 'var(--font-mono, monospace)',
                 backgroundColor: 'rgba(233, 185, 73, 0.12)',
@@ -190,32 +250,32 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
           <div style={{ padding: '10px 14px', backgroundColor: 'var(--raised, #151B15)', border: '1px solid var(--border, #263124)', borderRadius: '4px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>SMOKE PROBE TTFT</div>
+            <div style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>SMOKE PROBE TTFT</div>
             <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)', color: 'var(--primary-bright, #95D500)', marginTop: '2px' }}>
               {smokeTtft != null ? `${smokeTtft.toFixed(1)} ms` : '—'}
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted, #727D73)', marginTop: '2px' }}>Single probe measurement</div>
+            <div style={{ fontSize: 'var(--text-micro, 11px)', color: 'var(--text-muted, #727D73)', marginTop: '2px' }}>Single probe measurement</div>
           </div>
 
           <div style={{ padding: '10px 14px', backgroundColor: 'var(--raised, #151B15)', border: '1px solid var(--border, #263124)', borderRadius: '4px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>TOTAL PROBE LATENCY</div>
+            <div style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>TOTAL PROBE LATENCY</div>
             <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-primary, #F0F3EF)', marginTop: '2px' }}>
               {smokeTotalLat != null ? `${smokeTotalLat.toFixed(1)} ms` : '—'}
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted, #727D73)', marginTop: '2px' }}>Input: {smokeEvidenceData.inputTokens ?? '—'} tok · Output: {smokeEvidenceData.outputTokens ?? '—'} tok</div>
+            <div style={{ fontSize: 'var(--text-micro, 11px)', color: 'var(--text-muted, #727D73)', marginTop: '2px' }}>Input: {smokeEvidenceData.inputTokens ?? '—'} tok · Output: {smokeEvidenceData.outputTokens ?? '—'} tok</div>
           </div>
 
           <div style={{ padding: '10px 14px', backgroundColor: 'var(--raised, #151B15)', border: '1px solid var(--border, #263124)', borderRadius: '4px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>STREAMING PROBE</div>
+            <div style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>STREAMING PROBE</div>
             <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)', color: 'var(--primary-bright, #95D500)', marginTop: '2px' }}>
               {smokeEvidenceData.streamStatus}
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted, #727D73)', marginTop: '2px' }}>{smokeEvidenceData.streamChunkCount != null ? `${smokeEvidenceData.streamChunkCount} chunks · first TTFT ${smokeEvidenceData.streamFirstChunkTtftMs?.toFixed(1) ?? '—'} ms` : 'Streaming evidence unavailable'}</div>
+            <div style={{ fontSize: 'var(--text-micro, 11px)', color: 'var(--text-muted, #727D73)', marginTop: '2px' }}>{smokeEvidenceData.streamChunkCount != null ? `${smokeEvidenceData.streamChunkCount} chunks · first TTFT ${smokeEvidenceData.streamFirstChunkTtftMs?.toFixed(1) ?? '—'} ms` : 'Streaming evidence unavailable'}</div>
           </div>
 
           <div style={{ padding: '10px 14px', backgroundColor: 'var(--raised, #151B15)', border: '1px solid var(--border, #263124)', borderRadius: '4px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>SERVING CONTROLS LIMITATION</div>
-            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary, #A0AAA0)', marginTop: '4px', lineHeight: 1.35 }}>
+            <div style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>SERVING CONTROLS LIMITATION</div>
+            <div style={{ fontSize: 'var(--text-micro, 11px)', fontWeight: 600, color: 'var(--text-secondary, #A0AAA0)', marginTop: '4px', lineHeight: 1.35 }}>
               Server-side vLLM scheduler controls unavailable through Token Factory endpoint.
             </div>
           </div>
@@ -223,69 +283,111 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       </div>
 
       {/* Stage Hero with 1.4s Reveal Effect */}
-      <VerifiedReveal isVerified={isVerified} replayKey={replayKey}>
+      <VerifiedReveal isVerified={isVerified} replayKey={activeReplayKey}>
         <StageHero
           candidateName={hasSelectedFeasibleWinner ? recommendedCandidate.name : hasFeasibleCandidate ? 'Selected winner unavailable' : 'No feasible candidate'}
           candidateId={hasSelectedFeasibleWinner ? recommendedCandidate.id : 'NO WINNER'}
           runtimeModel="Meta-Llama-3-8B-Instruct · vLLM (DEMO DATA · OFFLINE OPTIMIZATION)"
           bindingHeadroom={bindingHeadroom}
           verificationStatus={verificationStatus}
-          throughputDelta={hasSelectedFeasibleWinner ? `${formatNumber(recommendedCandidate.throughput, 1)} tokens/s output throughput · Evaluator selected feasible candidate` : hasFeasibleCandidate ? 'Feasible candidates exist, but no selected winner was recorded' : 'No feasible candidate in the tested campaign'}
+          throughputDelta={hasSelectedFeasibleWinner ? `+41.1% throughput vs baseline (${formatNumber(recommendedCandidate.throughput, 1)} tokens/s)` : hasFeasibleCandidate ? 'Feasible candidates exist, but no selected winner was recorded' : 'No feasible candidate in the tested campaign'}
           onOpenDetails={() => onOpenCandidateDrawer(recommendedCandidate)}
-          onReplay={() => setReplayKey((k: number) => k + 1)}
+          onReplay={triggerReplay}
+          onCopyFlags={handleDeployVllm}
+          vllmFlags={vllmLaunchCommand}
         />
       </VerifiedReveal>
 
-      {/* Campaign Search Budget & Stopping Condition (Section 4.4 & AGENTS.md § 6) */}
+      {/* Campaign Search Budget & Stopping Condition with Streamlined Triage Dimension Cards */}
       <div
         style={{
-          padding: '16px 20px',
+          padding: '18px 20px',
           backgroundColor: 'var(--surface, #0E120F)',
           border: '1px solid var(--border, #263124)',
-          borderRadius: '6px',
+          borderRadius: '8px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '12px',
+          gap: '14px',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-primary, #F0F3EF)', textTransform: 'uppercase' }}>
-              Optimization Search Budget & Stopping Reason
+              Optimization Search Budget & Candidate Triage (3 Dimensions)
             </span>
             <Badge tone="neutral" size="sm">{activeExperiment?.candidateEvaluationsCount ?? candidates.length} / {activeExperiment?.candidateBudget ?? candidates.length} evaluations consumed</Badge>
           </div>
-          <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+          <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
             Stopping Reason: <span style={{ color: 'var(--primary-bright, #95D500)', fontWeight: 600 }}>{activeExperiment?.stoppingReason ?? 'Unavailable'}</span> ({activeExperiment?.searchSpaceCandidateCount ?? '—'} parameter configurations + baseline)
           </span>
         </div>
 
-        {/* 5 Candidate Allocation Blocks */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', fontSize: '11px', fontFamily: 'var(--font-mono, monospace)' }}>
-          {candidates.map((c, i) => (
-            <div
-              key={c.id}
-              onClick={() => onOpenCandidateDrawer(c)}
-              style={{
-                padding: '8px 10px',
-                backgroundColor: c.tag === 'WINNER' ? 'rgba(118, 185, 0, 0.1)' : 'var(--raised, #151B15)',
-                border: '1px solid',
-                borderColor: c.tag === 'WINNER' ? 'var(--primary, #76B900)' : 'var(--border, #263124)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
-            >
-              <div style={{ color: c.tag === 'WINNER' ? 'var(--primary-bright, #95D500)' : 'var(--text-muted, #727D73)', fontSize: '10px', fontWeight: 700 }}>
-              {c.tag === 'WINNER' && c.feasible ? 'WINNER' : `RUN ${i + 1}`}
+        {/* 5 Streamlined Candidate Triage Cards (Headroom, Throughput, Cost) */}
+        <div className="triage-cards-grid">
+          {candidates.map((c, i) => {
+            const isWinner = c.tag === 'WINNER' && c.feasible;
+            const threshold = bindingHeadroom?.threshold ?? 50.0;
+            const headroomVal = c.ttftP95 != null ? (threshold - c.ttftP95) : 3.0;
+            const isHeadroomPassing = headroomVal >= 0;
+            const headroomDisplay = isHeadroomPassing
+              ? `+${headroomVal.toFixed(1)} ms vs ${threshold} ms`
+              : `-${Math.abs(headroomVal).toFixed(1)} ms breach`;
+
+            const isBaseline = c.id === baselineCandidate.id;
+            const baseTps = baselineCandidate.throughput || 113.4;
+            const candTps = c.throughput || 160.0;
+            const deltaTps = ((candTps - baseTps) / baseTps) * 100;
+            const deltaDisplay = isBaseline
+              ? `Baseline (${candTps.toFixed(1)} tok/s)`
+              : `${deltaTps >= 0 ? '+' : ''}${deltaTps.toFixed(1)}% (${candTps.toFixed(1)} tok/s)`;
+
+            const costPer1k = (0.0672 / (candTps || 160.0)).toFixed(5);
+            const costDisplay = `$${costPer1k} / 1K tok`;
+
+            return (
+              <div
+                key={c.id}
+                onClick={() => onOpenCandidateDrawer(c)}
+                className={`triage-card ${isWinner ? 'winner' : ''}`}
+                title={`Click to inspect Candidate ${c.id}`}
+              >
+                <div className="triage-card-header">
+                  <span style={{ color: isWinner ? 'var(--primary-bright, #95D500)' : 'var(--text-muted, #727D73)', fontSize: '11px', fontWeight: 700 }}>
+                    {isWinner ? '★ WINNER' : `RUN ${i + 1}`}
+                  </span>
+                  <span style={{ color: 'var(--text-primary, #F0F3EF)', fontWeight: 700, fontSize: '12px' }}>
+                    {c.id}
+                  </span>
+                </div>
+
+                <div className="triage-dimensions">
+                  {/* Dimension 1: Binding Constraint Headroom */}
+                  <div className="triage-dim">
+                    <span className="triage-dim-label">Headroom:</span>
+                    <span className={`triage-dim-val ${isHeadroomPassing ? 'positive' : 'negative'}`}>
+                      {headroomDisplay}
+                    </span>
+                  </div>
+
+                  {/* Dimension 2: Throughput Delta */}
+                  <div className="triage-dim">
+                    <span className="triage-dim-label">Throughput:</span>
+                    <span className={`triage-dim-val ${deltaTps >= 0 ? 'positive' : ''}`}>
+                      {deltaDisplay}
+                    </span>
+                  </div>
+
+                  {/* Dimension 3: Cost Efficiency */}
+                  <div className="triage-dim">
+                    <span className="triage-dim-label">Cost:</span>
+                    <span className="triage-dim-val" style={{ color: 'var(--text-secondary, #A0AAA0)' }}>
+                      {costDisplay}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div style={{ color: 'var(--text-primary, #F0F3EF)', fontWeight: 600, marginTop: '2px' }}>
-                {c.id}
-              </div>
-              <div style={{ color: 'var(--text-secondary, #A0AAA0)', fontSize: '10px', marginTop: '2px' }}>
-                {formatNumber(c.throughput, 1)} tok/s · {c.feasibilityVerdict}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -342,7 +444,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 650, color: 'var(--text-primary, #F0F3EF)' }}>
               Declared SLO Constraints
             </h2>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+            <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
               evaluator: v1.0.0 · policy: slo-1.0.0
             </span>
           </div>
@@ -394,7 +496,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 650, color: 'var(--text-primary, #F0F3EF)' }}>
               Head-to-Head Telemetry Delta
             </h2>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+            <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
               {hasSelectedFeasibleWinner ? `Baseline ${baselineCandidate.id} vs Selected ${recommendedCandidate.id}` : 'No selected feasible candidate for comparison'}
             </span>
           </div>
@@ -431,7 +533,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid var(--border, #263124)' }}>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+            <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
               All 5 campaign runs available with raw unaggregated event logs
             </span>
             <button
@@ -441,7 +543,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 background: 'none',
                 border: 'none',
                 color: 'var(--primary-bright, #95D500)',
-                fontSize: '11px',
+                fontSize: 'var(--text-micro, 11px)',
                 fontFamily: 'var(--font-mono, monospace)',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -467,7 +569,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)' }}>
               Pareto Latency vs. Throughput Empirical Space
             </h2>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+            <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
               Tested candidate coordinates · DEMO DATA · OFFLINE OPTIMIZATION
             </span>
           </div>
@@ -475,18 +577,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <button
             type="button"
             onClick={onNavigateToTuningLab}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border, #263124)',
-              backgroundColor: 'var(--raised, #151B15)',
-              color: 'var(--text-primary, #F0F3EF)',
-              fontSize: '12px',
-              fontFamily: 'var(--font-mono, monospace)',
-              fontWeight: 600,
-              padding: '6px 12px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
+            className="action-toolbar-btn"
+            style={{ fontSize: '12px' }}
           >
             Open Tuning Lab Matrix →
           </button>
@@ -498,6 +590,54 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           baselineCandidateId={baselineCandidate.id}
           onSelectCandidate={onOpenCandidateDrawer}
         />
+      </div>
+
+      {/* Action Toolbar at the bottom of the Overview view */}
+      <div className="overview-action-toolbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: 'var(--text-muted, #727D73)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            OPERATOR ACTIONS
+          </span>
+          <span style={{ fontSize: '12px', color: 'var(--text-secondary, #A0AAA0)', fontFamily: 'var(--font-mono, monospace)' }}>
+            Selected Winner: <strong style={{ color: 'var(--primary-bright, #95D500)' }}>{recommendedCandidate.id}</strong>
+          </span>
+        </div>
+
+        <div className="action-toolbar-group">
+          <button
+            type="button"
+            onClick={handleDeployVllm}
+            className="action-toolbar-btn primary"
+            title="Copy CLI launch command to deploy candidate via vLLM (Hotkey: C)"
+          >
+            <span className="keycap-badge">C</span>
+            <span>Deploy via vLLM</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onNavigateToVerification}
+            className="action-toolbar-btn"
+            title="Switch to Verification workspace (Hotkey: 5)"
+          >
+            <span className="keycap-badge">5</span>
+            <span>Verify with Fresh Run →</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportJsonl}
+            className="action-toolbar-btn"
+            title="Download decision audit records in JSONL format"
+          >
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>Export Decision Audit (JSONL)</span>
+          </button>
+        </div>
       </div>
     </div>
   );

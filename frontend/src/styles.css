@@ -5804,5 +5804,249 @@ tbody tr:last-child td {
   }
 }
 
+/* ==========================================================================
+   Keyboard Shortcuts HUD Modal & Action Toolbar & Diagnostics
+   ========================================================================== */
+
+.shortcuts-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+  animation: backdrop-enter 160ms ease-out forwards;
+}
+
+.shortcuts-modal {
+  width: 520px;
+  max-width: 92vw;
+  background-color: var(--elevated, #1D251E);
+  border: 1px solid var(--border-strong, #384635);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.75));
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: var(--text-primary, #F0F3EF);
+}
+
+.shortcuts-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border, #263124);
+  padding-bottom: 12px;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.shortcut-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: var(--surface, #0E120F);
+  border: 1px solid var(--border, #263124);
+  border-radius: 4px;
+  font-size: var(--text-caption, 12px);
+  font-family: var(--font-mono, monospace);
+}
+
+.shortcut-row-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shortcut-label {
+  color: var(--text-primary, #F0F3EF);
+}
+
+.shortcut-keycaps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Action Toolbar at bottom of Overview */
+.overview-action-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background-color: var(--surface, #0E120F);
+  border: 1px solid var(--border-strong, #384635);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.6));
+  flex-wrap: wrap;
+}
+
+.action-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.action-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--raised, #151B15);
+  border: 1px solid var(--border-strong, #384635);
+  color: var(--text-primary, #F0F3EF);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-caption, 12px);
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color var(--duration-fast, 140ms) ease,
+              border-color var(--duration-fast, 140ms) ease,
+              color var(--duration-fast, 140ms) ease;
+}
+
+.action-toolbar-btn:hover {
+  background-color: var(--elevated, #1D251E);
+  border-color: var(--primary, #76B900);
+  color: var(--primary-bright, #95D500);
+}
+
+.action-toolbar-btn.primary {
+  background-color: rgba(118, 185, 0, 0.16);
+  border-color: var(--primary, #76B900);
+  color: var(--primary-bright, #95D500);
+}
+
+.action-toolbar-btn.primary:hover {
+  background-color: rgba(118, 185, 0, 0.28);
+}
+
+/* Candidate Triage Dimension Cards */
+.triage-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.triage-card {
+  padding: 12px 14px;
+  background-color: var(--raised, #151B15);
+  border: 1px solid var(--border, #263124);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color var(--duration-fast, 140ms) ease,
+              background-color var(--duration-fast, 140ms) ease;
+}
+
+.triage-card:hover {
+  border-color: var(--border-strong, #384635);
+  background-color: var(--hover, #1F281E);
+}
+
+.triage-card.winner {
+  background-color: rgba(118, 185, 0, 0.08);
+  border-color: var(--primary, #76B900);
+}
+
+.triage-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.triage-dimensions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-micro, 11px);
+}
+
+.triage-dim {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.triage-dim-label {
+  color: var(--text-muted, #727D73);
+}
+
+.triage-dim-val {
+  font-weight: 600;
+  color: var(--text-primary, #F0F3EF);
+}
+
+.triage-dim-val.positive {
+  color: var(--primary-bright, #95D500);
+}
+
+.triage-dim-val.negative {
+  color: var(--error, #FF5555);
+}
+
+/* Drawer Telemetry Chips & Snippet */
+.drawer-telemetry-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background-color: var(--surface, #0E120F);
+  border: 1px solid var(--border, #263124);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-micro, 11px);
+  color: var(--text-secondary, #A0AAA0);
+}
+
+.drawer-cli-box {
+  background-color: var(--canvas, #080A09);
+  border: 1px solid var(--border-strong, #384635);
+  border-radius: 6px;
+  padding: 12px 14px;
+  position: relative;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-caption, 12px);
+  overflow-x: auto;
+}
+
+.drawer-cli-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--raised, #151B15);
+  border: 1px solid var(--border-strong, #384635);
+  color: var(--text-primary, #F0F3EF);
+  font-size: var(--text-micro, 11px);
+  font-family: var(--font-mono, monospace);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color var(--duration-fast, 140ms) ease;
+}
+
+.drawer-cli-copy-btn:hover {
+  background-color: var(--elevated, #1D251E);
+  border-color: var(--primary, #76B900);
+  color: var(--primary-bright, #95D500);
+}
+
 
 

@@ -61,7 +61,7 @@ def validate_search_capabilities(
     """
     Preflights adapter capabilities against requested search parameters.
     Halts immediately with SearchConfigurationError citing BLK-17 if the adapter
-    does not support dynamic per-request application and read-back of process startup flags.
+    does not support dynamic per-request application and read-back of requested parameters.
     """
     if adapter is None:
         return
@@ -80,12 +80,12 @@ def validate_search_capabilities(
     provider = str(fp.get("provider", "")).lower()
     runtime = str(getattr(adapter, "runtime_name", "")).lower()
     is_live_fixed_engine = (
-        provider in ("nebius", "ollama")
-        or "ollama" in runtime
+        provider == "nebius"
         or "nebius" in runtime
     ) and not fp.get("is_simulated", False)
 
-    if is_live_fixed_engine:
+    startup_flags = {"max_num_batched_tokens", "max_num_seqs"}
+    if is_live_fixed_engine and any(p in startup_flags for p in params_to_check):
         raise SearchConfigurationError(
             f"Adapter {adapter.runtime_name!r} does not dynamically apply or read back process startup flags "
             f"({', '.join(params_to_check)}) per request. Halting optimization campaign (BLK-17)."
@@ -244,7 +244,7 @@ class GridSearchController:
         evaluated: List[EvaluatedCandidate] = []
         candidate_summaries: Dict[str, CandidateSummary] = {}
         tested_ids: List[str] = []
-        candidate_limit = min(4, spec.budget.max_candidates)
+        candidate_limit = min(len(candidate_settings), spec.budget.max_candidates)
         stopping_reason = "space_exhausted"
 
         max_search_runs = 1 + candidate_limit
@@ -324,10 +324,10 @@ class GridSearchController:
                         "Search exceeded its wall-clock budget during a run",
                         run_result=result,
                     )
-                if index == 0 and candidate_limit < 4:
+                if index == 0 and candidate_limit < len(candidate_settings):
                     stopping_reason = "budget_exhausted"
                 elif index == candidate_limit:
-                    stopping_reason = "budget_exhausted" if candidate_limit < 4 else "space_exhausted"
+                    stopping_reason = "budget_exhausted" if candidate_limit < len(candidate_settings) else "space_exhausted"
 
             ranked = rank_candidates(evaluated, ranking_objective)
             winner = ranked[0] if ranked else None
@@ -356,6 +356,7 @@ class GridSearchController:
             search_dir = self.artifacts_root / "experiments" / spec.experiment_id
             search_dir.mkdir(parents=True, exist_ok=True)
             (search_dir / "search_result.json").write_text(search_result.model_dump_json(indent=2), encoding="utf-8")
+            (search_dir / "experiment_spec.json").write_text(spec.model_dump_json(indent=2), encoding="utf-8")
 
             verification_record = None
             if auto_verify and winner is not None and budget.can_execute_verification_run():
@@ -363,6 +364,7 @@ class GridSearchController:
 
                 winner_config = next((c for c in configs if c.candidate_id == winner.candidate_id), None)
                 if winner_config is not None:
+                    from slokern.core.verification.compare import DriftPolicy
                     budget.record_verification_run()
                     verif_seed = None if seed is None else seed + 100
                     winner_result = next(
@@ -378,6 +380,11 @@ class GridSearchController:
                         else f"run-search-{winner.candidate_id[:6]}"
                     )
                     existing_run_ids = [r.run_id for r in run_results if getattr(r, "run_id", None)]
+                    drift_policy = (
+                        DriftPolicy.from_verification_policy(spec.verification_policy)
+                        if getattr(spec, "verification_policy", None)
+                        else None
+                    )
                     verification_record = run_independent_verification(
                         original_run_id=orig_run_id,
                         candidate_config=winner_config,
@@ -385,6 +392,7 @@ class GridSearchController:
                         slo=spec.slo,
                         experiment_id=spec.experiment_id,
                         original_metrics=winner.metric_set,
+                        drift_policy=drift_policy,
                         adapter=self.adapter,
                         single_run_executor=self.single_run_executor,
                         artifacts_root=self.artifacts_root,
@@ -426,38 +434,41 @@ class GridSearchController:
 
     def _candidate_settings(self, spec: ExperimentSpec) -> List[dict]:
         declared = spec.search_space or DEFAULT_SEARCH_SPACE
-        if len(declared) != 2:
-            raise SearchConfigurationError(
-                "The bounded search requires exactly two parameter axes"
-            )
+        if not declared:
+            return []
         axes = []
         for name in sorted(declared):
             values = declared[name]
-            if not isinstance(values, (list, tuple)) or len(values) != 2:
+            if not isinstance(values, (list, tuple)) or len(values) < 1:
                 raise SearchConfigurationError(
-                    f"Search axis {name!r} must declare exactly two values"
+                    f"Search axis {name!r} must declare at least one value"
                 )
-            if values[0] == values[1]:
+            if len(set(values)) != len(values):
                 raise SearchConfigurationError(
-                    f"Search axis {name!r} must contain two distinct values"
+                    f"Search axis {name!r} must contain distinct values"
                 )
-            axes.append((name, tuple(values)))
+            axes.append([(name, val) for val in values])
         return [
-            {axes[0][0]: first, axes[1][0]: second}
-            for first, second in itertools.product(*[axis[1] for axis in axes])
+            dict(combo)
+            for combo in itertools.product(*axes)
         ]
 
-    def _make_config(self, settings: dict) -> CandidateConfig:
+    def _make_config(
+        self,
+        settings: dict,
+        model_name: Optional[str] = None,
+        runtime_name: Optional[str] = None,
+    ) -> CandidateConfig:
         from slokern.core.search.candidate_id import generate_candidate_id
 
-        runtime_name = self.adapter.runtime_name if self.adapter else "vllm-default"
-        model_name = self.model_name or (self.adapter.model_name if self.adapter else "model-default")
+        resolved_runtime = runtime_name or (self.adapter.runtime_name if self.adapter else "vllm-default")
+        resolved_model = model_name or self.model_name or (self.adapter.model_name if self.adapter else "model-default")
         return CandidateConfig(
             candidate_id=generate_candidate_id(
-                model_name, runtime_name, settings
+                resolved_model, resolved_runtime, settings
             ),
-            model_name=model_name,
-            runtime_name=runtime_name,
+            model_name=resolved_model,
+            runtime_name=resolved_runtime,
             requested_settings=settings,
             effective_settings={},
             parameter_status={},
@@ -594,11 +605,22 @@ class GridSearchController:
             if cancellation_token and cancellation_token.is_cancelled:
                 is_cancelled = True
 
-        # Generate 4 Search Candidates across 2x2 grid
-        grid_candidates = generate_2x2_candidates(
-            model_name=baseline_config.model_name,
-            runtime_name=baseline_config.runtime_name,
-        )
+        # Generate Search Candidates
+        if experiment_spec and experiment_spec.search_space:
+            candidate_settings = self._candidate_settings(experiment_spec)
+            grid_candidates = [
+                self._make_config(
+                    settings,
+                    model_name=baseline_config.model_name,
+                    runtime_name=baseline_config.runtime_name,
+                )
+                for settings in candidate_settings
+            ]
+        else:
+            grid_candidates = generate_2x2_candidates(
+                model_name=baseline_config.model_name,
+                runtime_name=baseline_config.runtime_name,
+            )
 
         all_grid_completed = True
 
@@ -699,9 +721,13 @@ class GridSearchController:
             stopping_reason=stopping_reason,
         )
 
-        # Persist search_result.json to disk atomically
+        # Persist search_result.json and experiment_spec.json to disk atomically
         result_path = resolved_output_dir / "search_result.json"
         result_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+        if experiment_spec:
+            (resolved_output_dir / "experiment_spec.json").write_text(
+                experiment_spec.model_dump_json(indent=2), encoding="utf-8"
+            )
 
         # Run 6: Independent Verification Rerun if auto_verify is requested
         if auto_verify and selected_candidate_id and budget.can_execute_verification_run():
@@ -715,10 +741,16 @@ class GridSearchController:
             if winner_cfg is not None and orig_metrics is not None:
                 budget.record_verification_run()
                 verif_seed = None if seed is None else seed + 100
-                cand_run_ids = {baseline_config.candidate_id: f"run-00-base-{baseline_config.candidate_id[:6]}"}
+                cand_run_ids = {baseline_config.candidate_id: baseline_run_id}
                 for idx, c in enumerate(grid_candidates, start=1):
                     cand_run_ids[c.candidate_id] = f"run-{idx:02d}-cand-{c.candidate_id[:6]}"
                 orig_run_id = cand_run_ids.get(selected_candidate_id, f"run-search-{selected_candidate_id[:6]}")
+                from slokern.core.verification.compare import DriftPolicy
+                drift_pol = (
+                    DriftPolicy.from_verification_policy(experiment_spec.verification_policy)
+                    if experiment_spec and getattr(experiment_spec, "verification_policy", None)
+                    else None
+                )
                 run_independent_verification(
                     original_run_id=orig_run_id,
                     candidate_config=winner_cfg,
@@ -726,6 +758,7 @@ class GridSearchController:
                     slo=resolved_slo,
                     experiment_id=resolved_experiment_id,
                     original_metrics=orig_metrics,
+                    drift_policy=drift_pol,
                     adapter=adapter_to_use,
                     single_run_executor=self.single_run_executor,
                     artifacts_root=self.artifacts_root,
@@ -760,7 +793,8 @@ class GridSearchController:
         Executes bounded 2x2 grid search with mandatory capability preflight gating (BLK-17).
         """
         adapter_to_use = serving_adapter or self.adapter
-        validate_search_capabilities(adapter_to_use)
+        search_params = list(spec.search_space.keys()) if spec and spec.search_space else None
+        validate_search_capabilities(adapter_to_use, search_params)
 
         if spec is not None:
             return self.run(
@@ -769,6 +803,7 @@ class GridSearchController:
                 cancellation_token=cancellation_token,
                 seed=seed,
                 prompts=[prompts] if isinstance(prompts, str) else prompts,
+                auto_verify=kwargs.get("auto_verify", False),
             )
 
         resolved_baseline = baseline_config
@@ -801,6 +836,7 @@ class GridSearchController:
             stream=stream,
             prompts=prompts,
             strict_config=strict_config,
+            auto_verify=kwargs.get("auto_verify", False),
         )
 
 

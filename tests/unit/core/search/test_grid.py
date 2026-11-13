@@ -75,18 +75,19 @@ class MockSingleRunExecutor:
         workload: WorkloadSpec,
         slo: SLOSpec,
         experiment_id: str,
-        run_id: str,
+        run_id: Optional[str] = None,
         **kwargs,
     ) -> SingleRunResult:
         self.call_count += 1
         self.called_configs.append(candidate_config)
+        resolved_run_id = run_id or f"run-mock-{self.call_count:02d}"
 
         tps = self.throughput_map.get(candidate_config.candidate_id, 100.0 + self.call_count * 10.0)
-        ms = _create_test_metric_set(run_id, throughput_tps=tps)
+        ms = _create_test_metric_set(resolved_run_id, throughput_tps=tps)
 
         feasibility = FeasibilityResult(
             policy_version="1.0.0",
-            run_id=run_id,
+            run_id=resolved_run_id,
             overall_verdict=self.default_verdict,
             constraint_evaluations=[],
             validity_status=EvidenceValidity.VALID,
@@ -94,7 +95,7 @@ class MockSingleRunExecutor:
         )
 
         record = RunRecord(
-            run_id=run_id,
+            run_id=resolved_run_id,
             experiment_id=experiment_id,
             candidate_id=candidate_config.candidate_id,
             is_verification_run=kwargs.get("is_verification_run", False),
@@ -402,3 +403,100 @@ def test_grid_search_controller_run_halts_on_ollama_and_nebius(tmp_path: Path):
     with pytest.raises(SearchConfigurationError) as exc_info2:
         nebius_ctrl.run(spec, ranking_objective=RankingObjective.MAX_THROUGHPUT_UNDER_SLO)
     assert "BLK-17" in str(exc_info2.value)
+
+
+def test_validate_search_capabilities_passes_for_supported_ollama_params():
+    """validate_search_capabilities succeeds when requested parameters are supported by Ollama."""
+    from slokern.core.search.grid import validate_search_capabilities
+    from slokern.engine.serving.ollama import OllamaServingAdapter
+
+    adapter = OllamaServingAdapter()
+    # Does not raise SearchConfigurationError
+    validate_search_capabilities(adapter, ["num_batch", "num_ctx"])
+
+
+def test_grid_search_controller_executes_dynamic_ollama_grid(tmp_path: Path):
+    """GridSearchController runs successfully with Ollama when valid search space is provided."""
+    from slokern.contracts.enums import ArrivalMode
+    from slokern.contracts.spec import (
+        ExperimentBudget,
+        ExperimentSpec,
+        ExperimentVerificationPolicy,
+    )
+    from slokern.engine.serving.ollama import OllamaServingAdapter
+
+    spec = ExperimentSpec(
+        experiment_id="exp-dynamic-ollama-test",
+        workload=WorkloadSpec(
+            schema_version="1.0.0",
+            workload_name="w",
+            fixture_id="f",
+            arrival_mode=ArrivalMode.CONSTANT,
+            target_offered_rate=10,
+            concurrency_limit=2,
+            warmup_duration_s=1,
+            measurement_duration_s=1,
+            max_input_tokens=10,
+            max_output_tokens=10,
+        ),
+        slo=SLOSpec(slo_id="s", constraints=[], min_sample_count=1),
+        search_space={"num_batch": [256, 1024], "num_ctx": [1024, 2048]},
+        budget=ExperimentBudget(max_candidates=5, max_wallclock_seconds=60),
+        verification_policy=ExperimentVerificationPolicy(),
+    )
+
+    mock_executor = MockSingleRunExecutor()
+    controller = GridSearchController(
+        executor=mock_executor,
+        adapter=OllamaServingAdapter(),
+        artifacts_root=tmp_path,
+    )
+
+    outcome = controller.run(spec, ranking_objective=RankingObjective.MAX_THROUGHPUT_UNDER_SLO)
+    assert len(outcome.run_results) == 5  # 1 baseline + 4 candidates
+    assert outcome.search_result.selected_candidate_id is not None
+    assert outcome.search_result.stopping_reason == "space_exhausted"
+
+    # Verify that requested candidate settings contain num_batch and num_ctx
+    cand_settings = [r.applied_config.requested_settings for r in outcome.run_results[1:]]
+    assert {s["num_batch"] for s in cand_settings} == {256, 1024}
+    assert {s["num_ctx"] for s in cand_settings} == {1024, 2048}
+
+
+def test_grid_search_controller_persists_spec_in_execute(
+    tmp_path: Path,
+    mock_workload: WorkloadSpec,
+    mock_slo: SLOSpec,
+    baseline_candidate: CandidateConfig,
+):
+    """execute() persists experiment_spec.json when experiment_spec is passed."""
+    from slokern.contracts.spec import (
+        ExperimentBudget,
+        ExperimentSpec,
+        ExperimentVerificationPolicy,
+    )
+    from slokern.core.search.grid import GridSearchController
+
+    spec = ExperimentSpec(
+        experiment_id="exp-exec-spec-persist",
+        workload=mock_workload,
+        slo=mock_slo,
+        search_space={"max_num_batched_tokens": [1024, 2048], "max_num_seqs": [16, 64]},
+        budget=ExperimentBudget(max_candidates=5, max_wallclock_seconds=60),
+        verification_policy=ExperimentVerificationPolicy(),
+    )
+    mock_executor = MockSingleRunExecutor()
+    controller = GridSearchController(
+        single_run_executor=mock_executor,
+        artifacts_root=tmp_path,
+    )
+    controller.execute(
+        baseline_config=baseline_candidate,
+        experiment_spec=spec,
+    )
+    persisted_spec = tmp_path / "experiments" / "exp-exec-spec-persist" / "experiment_spec.json"
+    assert persisted_spec.exists()
+    loaded_spec = ExperimentSpec.model_validate_json(persisted_spec.read_text(encoding="utf-8"))
+    assert loaded_spec.experiment_id == "exp-exec-spec-persist"
+
+

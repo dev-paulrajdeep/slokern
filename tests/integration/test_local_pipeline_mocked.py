@@ -185,7 +185,7 @@ def test_local_pipeline_single_run_and_verification(tmp_path: Path, capsys):
     """
     with patch("urllib.request.OpenerDirector.open", side_effect=mock_opener_open):
         # Step 1: Preflight Smoke Test Probe
-        ret = smoke_test_command(adapter="local")
+        ret = smoke_test_command(adapter="local", artifact_path=str(tmp_path / "smoke.json"))
         assert ret == 0
         captured = capsys.readouterr()
         assert "[SLOKern Preflight Smoke Test]" in captured.out

@@ -5,6 +5,7 @@ Authority: Aligned with DEC-0014 and AGENTS.md Section 1, 3, 9, 12
 """
 
 import json
+import os
 import urllib.error
 import urllib.request
 from unittest.mock import MagicMock, patch
@@ -404,4 +405,105 @@ def test_ollama_check_readiness_different_family_variant_rejected():
 
     assert res["ready"] is False
     assert res["status"] == "model_missing"
+
+
+def test_ollama_dynamic_batch_and_ctx_applied():
+    """num_batch and num_ctx are declared, valid, and applied to current_config."""
+    adapter = OllamaServingAdapter()
+    candidate = CandidateConfig(
+        candidate_id="cand-dyn-01",
+        model_name="qwen3:4b-instruct-2507-q4_K_M",
+        runtime_name="ollama",
+        requested_settings={
+            "num_batch": 1024,
+            "num_ctx": 4096,
+        },
+        effective_settings={},
+        parameter_status={},
+        environment_fingerprint={},
+    )
+
+    applied = adapter.apply_config(candidate, strict=True)
+    assert applied.parameter_status["num_batch"] == ParameterStatus.APPLIED
+    assert applied.parameter_status["num_ctx"] == ParameterStatus.APPLIED
+    assert applied.effective_settings["num_batch"] == 1024
+    assert applied.effective_settings["num_ctx"] == 4096
+    assert adapter.current_config is not None
+    assert adapter.current_config.effective_settings["num_batch"] == 1024
+
+
+def test_ollama_generate_includes_dynamic_options():
+    """generate() merges num_batch and num_ctx from current_config into request payload."""
+    adapter = OllamaServingAdapter()
+    candidate = CandidateConfig(
+        candidate_id="cand-dyn-02",
+        model_name="qwen3:4b-instruct-2507-q4_K_M",
+        runtime_name="ollama",
+        requested_settings={"num_batch": 256, "num_ctx": 1024},
+        effective_settings={},
+        parameter_status={},
+        environment_fingerprint={},
+    )
+    adapter.apply_config(candidate)
+
+    captured_payload = {}
+
+    def mock_open(req, timeout=None):
+        nonlocal captured_payload
+        captured_payload = json.loads(req.data.decode("utf-8"))
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = json.dumps({
+            "message": {"content": "ok"},
+            "prompt_eval_count": 5,
+            "eval_count": 2,
+        }).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+        return mock_resp
+
+    with patch.object(adapter._opener, "open", side_effect=mock_open):
+        resp = adapter.generate(ServingRequest(prompt="test", max_tokens=16))
+
+    assert resp.status_code == 200
+    assert captured_payload["options"]["num_batch"] == 256
+    assert captured_payload["options"]["num_ctx"] == 1024
+    assert captured_payload["options"]["num_predict"] == 16
+
+
+def test_ollama_gpu_fingerprint_probing():
+    """get_environment_fingerprint safely includes probed GPU details if present."""
+    adapter = OllamaServingAdapter()
+    fp = adapter.get_environment_fingerprint()
+    assert fp["provider"] == "ollama"
+    # When running on host with RTX 5060, gpu_device will be detected
+    if "gpu_device" in fp:
+        assert isinstance(fp["gpu_device"], str)
+        assert len(fp["gpu_device"]) > 0
+    if "vram_mb" in fp:
+        assert isinstance(fp["vram_mb"], int)
+        assert fp["vram_mb"] > 0
+
+
+def test_ollama_timeout_configuration_and_env():
+    """OllamaServingAdapter defaults to 60.0s and respects OLLAMA_TIMEOUT_S."""
+    adapter = OllamaServingAdapter()
+    assert adapter.timeout_s == 60.0
+
+    with patch.dict(os.environ, {"OLLAMA_TIMEOUT_S": "120.5"}):
+        adapter_custom = OllamaServingAdapter()
+        assert adapter_custom.timeout_s == 120.5
+
+
+def test_ollama_gpu_probing_does_not_cache_empty(monkeypatch):
+    """_probe_local_gpu does not permanently cache an empty dict on transient failure."""
+    import slokern.engine.serving.ollama as sm
+    monkeypatch.setattr(sm, "_CACHED_GPU_INFO", None)
+
+    with patch("subprocess.run", side_effect=Exception("transient failure")):
+        res1 = sm._probe_local_gpu()
+        assert res1 == {}
+        # Must not be permanently cached as empty dict
+        assert sm._CACHED_GPU_INFO is None
+
+
 

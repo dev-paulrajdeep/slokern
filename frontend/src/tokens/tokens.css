@@ -48,6 +48,8 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.75);
   --glow-winner: 0 0 16px rgba(118, 185, 0, 0.28), 0 0 32px rgba(118, 185, 0, 0.12);
+  --glow-pending: 0 0 16px rgba(233, 185, 73, 0.22), 0 0 28px rgba(233, 185, 73, 0.08);
+  --glow-infeasible: 0 0 16px rgba(255, 85, 85, 0.22), 0 0 28px rgba(255, 85, 85, 0.08);
 
   /* Spacing Scale & Density Parameter */
   --p-density: 1;
@@ -78,12 +80,33 @@
 }
 
 /* High Contrast & Forced Colors */
+:focus-visible {
+  outline: 2px solid var(--primary-bright, #95D500);
+  outline-offset: 2px;
+}
+
 @media (forced-colors: active) {
   :root {
     --border: CanvasText;
     --border-strong: CanvasText;
     --primary: Highlight;
+    --primary-bright: Highlight;
     --text-primary: CanvasText;
+    --text-secondary: CanvasText;
+    --text-tertiary: CanvasText;
+  }
+
+  .stage-hero-container,
+  .slide-over-panel,
+  .slo-gauge,
+  .keycap-badge,
+  .triage-card {
+    border: 2px solid CanvasText !important;
+  }
+
+  :focus-visible {
+    outline: 3px solid Highlight !important;
+    outline-offset: 3px !important;
   }
 }
 
@@ -259,6 +282,357 @@ button:active,
     box-shadow: var(--glow-winner);
     border-color: var(--primary, #76B900);
   }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Stage Hero & Atmospheric Precision Instrument Classes
+   ========================================================================== */
+
+.stage-hero-container {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--surface, #0E120F);
+  border: 1px solid var(--border, #263124);
+  border-radius: 8px;
+  padding: 32px 36px;
+  transition: border-color var(--duration-normal, 220ms) var(--ease-spring),
+              box-shadow var(--duration-normal, 220ms) var(--ease-spring);
+}
+
+.stage-hero-container.winner-status {
+  border-color: var(--primary, #76B900);
+  box-shadow: var(--glow-winner);
+}
+
+.stage-hero-container.pending-status {
+  border-color: rgba(233, 185, 73, 0.45);
+  box-shadow: var(--glow-pending);
+}
+
+.stage-hero-container.infeasible-status {
+  border-color: rgba(255, 85, 85, 0.45);
+  box-shadow: var(--glow-infeasible);
+}
+
+/* Stage Hero Semantic Layout & Typography Classes */
+.stage-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stage-meta-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.stage-candidate-title {
+  font-size: 13px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: var(--text-primary, #F0F3EF);
+}
+
+.stage-candidate-model {
+  font-size: 12px;
+  color: var(--text-secondary, #A0AAA0);
+  font-family: var(--font-mono, monospace);
+}
+
+.stage-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stage-headroom-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.stage-headroom-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hero-unit-numeral {
+  font-size: clamp(20px, 3.5vw, 36px);
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary, #F0F3EF);
+  line-height: 1;
+}
+
+.hero-headroom-subtext {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted, #727D73);
+  font-family: var(--font-mono, monospace);
+}
+
+/* Stage Dynamic Binding Constraint Gauge */
+.stage-binding-gauge {
+  margin-top: 20px;
+  padding: 12px 16px;
+  background-color: var(--raised, #151B15);
+  border: 1px solid var(--border, #263124);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stage-binding-gauge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stage-binding-gauge-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-binding-gauge-lead {
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary, #F0F3EF);
+  font-weight: 600;
+}
+
+.stage-binding-gauge-telemetry {
+  font-size: var(--text-micro, 11px);
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary, #A0AAA0);
+}
+
+.stage-binding-gauge-track {
+  position: relative;
+  height: 6px;
+  background-color: var(--surface, #0E120F);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stage-binding-gauge-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  transition: width 280ms var(--ease-spring);
+}
+
+.stage-binding-gauge-fill.passing {
+  background-color: var(--primary, #76B900);
+}
+
+.stage-binding-gauge-fill.breach {
+  background-color: var(--error, #FF5555);
+}
+
+.stage-binding-gauge-ceiling {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--text-primary, #F0F3EF);
+  z-index: 2;
+}
+
+/* Stage Summary Callout */
+.stage-summary-bar {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border, #263124);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stage-summary-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary, #A0AAA0);
+  line-height: 1.4;
+}
+
+.stage-summary-delta {
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+}
+
+.stage-summary-delta.passing {
+  color: var(--primary-bright, #95D500);
+}
+
+.stage-summary-delta.muted {
+  color: var(--text-muted, #727D73);
+}
+
+/* Atmospheric Glow Utilities */
+.glow-winner {
+  box-shadow: var(--glow-winner) !important;
+}
+
+.glow-pending {
+  box-shadow: var(--glow-pending) !important;
+}
+
+.glow-infeasible {
+  box-shadow: var(--glow-infeasible) !important;
+}
+
+/* Hero Headroom Numeral (Stage Scale) */
+.hero-headroom-value {
+  font-size: var(--text-stage, clamp(56px, 11vw, 136px));
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  color: var(--primary-bright, #95D500);
+  text-shadow: 0 0 24px rgba(118, 185, 0, 0.28);
+  transition: color var(--duration-normal, 220ms) ease;
+}
+
+.hero-headroom-value.breach {
+  color: var(--error, #FF5555);
+  text-shadow: 0 0 24px rgba(255, 85, 85, 0.25);
+}
+
+/* Hero Constraint Badge */
+.hero-constraint-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-micro, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(118, 185, 0, 0.12);
+  border: 1px solid rgba(118, 185, 0, 0.35);
+  color: var(--primary-bright, #95D500);
+}
+
+.hero-constraint-badge.breach {
+  background: rgba(255, 85, 85, 0.12);
+  border-color: rgba(255, 85, 85, 0.35);
+  color: var(--error, #FF5555);
+}
+
+/* Keycap Hotkey Badge */
+.keycap-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-micro, 11px);
+  font-weight: 600;
+  color: var(--text-secondary, #A0AAA0);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-strong, #384635);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  line-height: 1.2;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  user-select: none;
+}
+
+/* Multi-stage reveal steps */
+.verified-reveal-container.step-scanning .stage-hero-container {
+  border-color: rgba(143, 154, 165, 0.35);
+  box-shadow: 0 0 12px rgba(143, 154, 165, 0.12);
+}
+
+.verified-reveal-container.step-lockin .stage-hero-container {
+  border-color: rgba(233, 185, 73, 0.45);
+  box-shadow: 0 0 16px rgba(233, 185, 73, 0.18);
+}
+
+.verified-reveal-container.step-bloom .stage-hero-container,
+.verified-reveal-container.step-revealed .stage-hero-container,
+.verified-reveal-container.winner-glow .stage-hero-container,
+.verified-reveal-container.revealing.winner-glow .stage-hero-container,
+.verified-reveal-container.revealed.winner-glow .stage-hero-container {
+  border-color: var(--primary, #76B900);
+  box-shadow: var(--glow-winner);
+  transition: box-shadow 380ms var(--ease-spring), border-color 380ms ease;
+}
+
+/* Radial SLO Gauge Geometry */
+.slo-gauge-radial {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.slo-radial-svg {
+  overflow: visible;
+}
+
+.slo-radial-track {
+  fill: none;
+  stroke: var(--raised, #151B15);
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.slo-radial-headroom {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  opacity: 0.35;
+}
+
+.slo-radial-fill {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dasharray 320ms var(--ease-spring);
+}
+
+.slo-radial-tick {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1.5;
+}
+
+.slo-radial-ceiling {
+  stroke: var(--text-primary, #F0F3EF);
+  stroke-width: 2.5;
+  stroke-linecap: round;
 }
 
 /* ==========================================================================

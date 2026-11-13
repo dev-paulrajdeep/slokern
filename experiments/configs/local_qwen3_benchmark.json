@@ -1,0 +1,56 @@
+{
+  "experiment_id": "exp-local-qwen3-tuning",
+  "workload": {
+    "schema_version": "1.0.0",
+    "workload_name": "local-qwen3-chat-workload",
+    "fixture_id": "fix-qwen3-chat-01",
+    "arrival_mode": "constant",
+    "target_offered_rate": 1.5,
+    "concurrency_limit": 2,
+    "warmup_duration_s": 8,
+    "measurement_duration_s": 15,
+    "max_input_tokens": 128,
+    "max_output_tokens": 32
+  },
+  "slo": {
+    "slo_id": "slo-local-qwen3-01",
+    "constraints": [
+      {
+        "metric_name": "ttft_ms",
+        "statistic": "p95",
+        "threshold": 2500.0,
+        "unit": "ms",
+        "operator": "<="
+      },
+      {
+        "metric_name": "itl_ms",
+        "statistic": "p50",
+        "threshold": 40.0,
+        "unit": "ms",
+        "operator": "<="
+      },
+      {
+        "metric_name": "error_rate",
+        "statistic": "mean",
+        "threshold": 0.05,
+        "unit": "fraction",
+        "operator": "<="
+      }
+    ],
+    "min_sample_count": 10
+  },
+  "search_space": {
+    "num_batch": [256, 1024],
+    "num_ctx": [1024, 2048]
+  },
+  "budget": {
+    "max_candidates": 5,
+    "max_wallclock_seconds": 300,
+    "max_cost_limit": null
+  },
+  "verification_policy": {
+    "repetitions": 1,
+    "duration_multiplier": 1.0,
+    "min_absolute_latency_drift_ms": 25.0
+  }
+}

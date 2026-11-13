@@ -58,6 +58,32 @@
           "description": "Multiplier for measurement duration during verification",
           "title": "Duration Multiplier",
           "type": "number"
+        },
+        "latency_relative_tolerance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Custom relative tolerance percentage for latency drift",
+          "title": "Latency Relative Tolerance"
+        },
+        "min_absolute_latency_drift_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Absolute latency floor in ms below which drift is not flagged as failure",
+          "title": "Min Absolute Latency Drift Ms"
         }
       },
       "title": "ExperimentVerificationPolicy",

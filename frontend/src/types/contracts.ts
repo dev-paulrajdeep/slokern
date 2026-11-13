@@ -85,6 +85,8 @@ export interface ExperimentBudget {
 export interface ExperimentVerificationPolicy {
   repetitions: number;
   duration_multiplier: number;
+  latency_relative_tolerance?: number | null;
+  min_absolute_latency_drift_ms?: number | null;
 }
 
 export interface ExperimentSpec {

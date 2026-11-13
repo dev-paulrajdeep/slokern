@@ -171,6 +171,34 @@ def test_custom_drift_policy():
     assert res.drift_exceeded is True
 
 
+def test_latency_drift_min_absolute_floor():
+    """
+    Validates min_absolute_latency_drift_ms noise floor:
+    When latencies are very small (e.g. 20ms base), a small absolute shift (e.g. 10ms)
+    yields a large relative percentage (+50%), but should pass if within the absolute floor.
+    """
+    orig = _make_metric_set("run-ref", ttft_p95=20.0)
+    # Verification: 30ms -> +50.0% relative drift, 10.0ms absolute drift
+    verif = _make_metric_set("run-v1", ttft_p95=30.0)
+
+    # 1. Default policy (floor = 0.0ms): fails due to +50% > 15%
+    res_default = compare_metrics(orig, verif)
+    assert res_default.metric_comparisons["ttft_p95"].passed is False
+    assert res_default.drift_exceeded is True
+
+    # 2. Policy with floor = 15.0ms: absolute drift 10.0ms <= 15.0ms -> passes
+    policy_with_floor = DriftPolicy(min_absolute_latency_drift_ms=15.0)
+    res_floor = compare_metrics(orig, verif, drift_policy=policy_with_floor)
+    assert res_floor.metric_comparisons["ttft_p95"].passed is True
+    assert res_floor.drift_exceeded is False
+
+    # 3. Policy with floor = 8.0ms: absolute drift 10.0ms > 8.0ms and +50% > 15% -> fails
+    strict_floor = DriftPolicy(min_absolute_latency_drift_ms=8.0)
+    res_strict = compare_metrics(orig, verif, drift_policy=strict_floor)
+    assert res_strict.metric_comparisons["ttft_p95"].passed is False
+    assert res_strict.drift_exceeded is True
+
+
 def test_slo_drift_detected_independent_of_tolerance():
     """
     Even if drift is within relative tolerance, crossing an SLO threshold

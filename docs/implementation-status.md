@@ -466,3 +466,35 @@ Scope freeze can only be reopened if:
   - `pytest tests/integration/test_frontend_api_integration.py`: 12-stage lifecycle integration test passed 100%.
   - Full repository test suite: 484 passed, 13 skipped in 25.85s.
 
+### 7.11 Experiment Integrity Audit and Remediation (AUDIT-EXP-01 / 2026-11-09)
+- **Milestone Progress:**
+  - **AUDIT-EXP-01 (Experiment History & Pipeline Integrity):** `DONE`. Full audit of the 81-record experiment export against deterministic pipeline rules, artifact resolution, and UI presentation invariants across all 8 mandatory investigations.
+- **Root Causes & Defect Log:**
+  - **DEF-EXP-01 (Contaminated Run Selection & Rationale Retention - Inv. 1):** `list_experiments` selected `sample_run_id` as the first directory in `iterdir()` order matching `selected_candidate`, picking old contaminated runs (e.g. `run-4d736d685a10`) rather than the authoritative verified run (`run-734b96dd5559`). In the UI/export, this presented contaminated measurement validity alongside search-time selection rationales. *Resolution:* Multi-tier authoritative run resolution prioritizing `original_run_id` from `verification_record.json` and quality-scored runs.
+  - **DEF-EXP-02 (Non-Feasibility of Contaminated Evidence - Inv. 2):** Audit of `evaluate_slo` (`evaluate.py:111, 177`) and `rank_candidates` (`rank.py:32`) verified that saturated or invalid runs strictly produce `INCONCLUSIVE` feasibility with `CONTAMINATED` validity and are eliminated from candidate ranking.
+  - **DEF-EXP-03 (Qwen3 & Verification-Only Campaign Feasibility vs Verified Discrepancy - Inv. 3):**
+    1. In `get_experiment_candidates` (`experiments.py`), `candidates_map[cid]` was overwritten by the last run alphabetically (`or is_winner`). In `exp-local-qwen3-tuning`, `run-eca313c50358` (contaminated, inconclusive) overwrote `run-734b96dd5559` (valid, feasible), reporting `INCONCLUSIVE` alongside `Verified`. *Resolution:* Deterministic run quality scoring (`_validity_score`, `_verdict_score`, `execution_status`, `mtime`, authoritative `orig_verified_run_id` priority).
+    2. In verification-only campaigns (`exp-28579777`, `exp-a30d62b1`), `get_experiment_candidates` skipped all runs with `"verify"` in their names, returning empty candidate lists and forcing `list_experiments` to report `Inconclusive`. *Resolution:* Only skip verification runs if non-verification search runs exist, and fall back to `search_res.candidate_summaries` or `status.feasibility_result` before defaulting to inconclusive.
+  - **DEF-EXP-04 (Six-Run Formal Benchmark Budget Enforcement - Inv. 4):** Audited `BudgetLimiter` (`budget.py:58-212`) and search controllers (`grid.py:250-276, 538-640`). Confirmed strict enforcement of the DEC-0010 6-run budget invariant (1 baseline + 4 search candidates + 1 verification run), preventing uncontrolled run execution or budget overflows.
+  - **DEF-EXP-05 (Baseline and Candidate Identity Relationships - Inv. 5):**
+    1. In `grid.py:744`, `cand_run_ids` mapped baseline candidate to `run-00-base-{cid[:6]}`, while baseline execution at line 563 used `run-00-baseline-{cid[:6]}`. If baseline won, verification recorded an unresolvable run ID. *Resolution:* Mapped baseline candidate directly to `baseline_run_id`.
+    2. In `verify.py:109`, CLI fabricated `original_run_id = f"run-search-{winner_id[:8]}"` instead of preserving the matched run folder name. *Resolution:* Captured `original_run_id = run_dir.name`.
+    3. In `protocol.py:223-236`, `verify_search_campaign` selected the last run in sorted order without validity checks. *Resolution:* Added run quality scoring so contaminated runs never overwrite valid runs as the verification baseline.
+  - **DEF-EXP-06 (Missing Workload and Constraint Metadata - Inv. 6):** `_find_campaign_spec` strictly inspected `fixtures/campaigns/`, causing 80+ experiments to report `"Metadata unavailable"`. *Resolution:* Multi-tier spec discovery: Tier 1 (`experiment_spec.json`), Tier 2 (`report.json` embedded spec), Tier 3 (`fixtures/campaigns/` and `experiments/configs/`), Tier 4 (reconstructed spec from `report.json`), Tier 5 (run-level telemetry recovery of `offered_load_rps` and constraint evaluations from `metrics.json` and `feasibility.json`).
+  - **DEF-EXP-07 (Evidence Classification Fragility & UI Distinguishability - Inv. 7):** Subsystem relied on brittle substring checks (`"fake" in str(runs)`). `ExperimentsView.tsx` had a hardcoded `<DemoDataChip />` and was missing an `EVIDENCE` badge column. *Resolution:* Implemented fingerprint-based `_classify_evidence` adhering to AGENTS.md § 1, 4, 8; added explicit `EVIDENCE` column in UI table; made `<DemoDataChip />` conditional on presence of simulated/demo data.
+  - **DEF-EXP-08 (Conflation of Execution State and Measurement Validity - Inv. 8):** `list_experiments` computed `state` as `"Completed" if runs_count > 0 else "Pending"`. *Resolution:* Derived `state` strictly from `RunRecord.execution_status` independently from validity, feasibility, and verification.
+- **State Independence Invariants Enforced:**
+  1. `ExecutionStatus` (`Completed`, `Running`, `Failed`, `Pending`): Subprocess execution health.
+  2. `EvidenceValidity` (`VALID`, `INVALID`, `CONTAMINATED`, `STALE`): Telemetry integrity.
+  3. `FeasibilityVerdict` (`Feasible`, `Infeasible`, `Inconclusive`): SLO constraint evaluation. Contaminated evidence strictly forces `INCONCLUSIVE`.
+  4. `VerificationState` (`Verified`, `Failed`, `Inconclusive`, `Pending`): Independent rerun verdict with a distinct run ID.
+- **Verification Evidence:**
+  - `pytest tests/unit/api/routes/test_experiment_integrity_audit.py`: 9 passed in 0.77s (covering spec recovery, Qwen3 resolution, verification-only campaigns, non-feasibility of contaminated evidence, state independence, evidence classification, baseline identity, and budget invariant).
+  - `pytest tests/unit/api/`: 36 passed in 23.05s (all API unit, contract, and health tests).
+  - `pytest tests/contract/`: 156 passed in 1.43s (all contract, schema, and verification independence tests).
+  - `npm --prefix frontend test`: 22 passed in 188ms.
+  - `npm --prefix frontend run build`: 0 compiler/TypeScript errors.
+  - `ruff check`: Clean (0 errors across all modified files).
+  - Empirical artifact audit: Audited all 82 local filesystem artifact campaigns; confirmed 0 contradictions (`Verified` not `Feasible`).
+
+

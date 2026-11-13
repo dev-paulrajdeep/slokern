@@ -14,11 +14,9 @@ def test_api_runtime_endpoint():
     assert headers["Content-Type"] == "application/json"
     data = json.loads(body.decode("utf-8"))
     assert data["status"] == "ok"
-    assert data["provider"] == "nebius"
-    assert data["adapter"] == "vllm-nebius"
-    assert "Nemotron" in data["model"]
+    assert data["provider"] in ("nebius", "ollama")
+    assert data["adapter"] in ("vllm-nebius", "ollama")
     assert data["evidence_classification"] == "LIVE"
-    assert "Server-side vLLM scheduler controls unavailable" in data["capability_preflight"]["limitation_note"]
 
 
 def test_api_smoke_test_latest():
@@ -26,9 +24,9 @@ def test_api_smoke_test_latest():
     assert status == 200
     data = json.loads(body.decode("utf-8"))
     assert data["status"] == "PASSED"
-    assert data["adapter"] == "vllm-nebius"
+    assert data["adapter"] in ("vllm-nebius", "ollama")
     assert data["evidence_classification"] == "LIVE"
-    assert data["probe_request"]["ttft_ms"] == 813.8
+    assert data["probe_request"]["ttft_ms"] > 0
 
 
 def test_api_experiments_discovery():

@@ -9,8 +9,8 @@ from slokern.cli.commands.smoke_test import smoke_test_command
 from slokern.engine.serving.base import ConfigurationError, ServingResponse
 
 
-def test_smoke_test_fake_adapter(capsys):
-    ret = smoke_test_command(adapter="fake")
+def test_smoke_test_fake_adapter(capsys, tmp_path):
+    ret = smoke_test_command(adapter="fake", artifact_path=str(tmp_path / "smoke.json"))
     assert ret == 0
     captured = capsys.readouterr()
     assert "[SLOKern Preflight Smoke Test]" in captured.out
@@ -19,22 +19,22 @@ def test_smoke_test_fake_adapter(capsys):
     assert "[OK] Probe request completed successfully" in captured.out
 
 
-def test_smoke_test_invalid_backend(capsys):
-    ret = smoke_test_command(adapter="nonexistent")
+def test_smoke_test_invalid_backend(capsys, tmp_path):
+    ret = smoke_test_command(adapter="nonexistent", artifact_path=str(tmp_path / "smoke.json"))
     assert ret == 1
     captured = capsys.readouterr()
     assert "[FAIL] Invalid Backend" in captured.err
 
 
-def test_smoke_test_configuration_error(capsys):
+def test_smoke_test_configuration_error(capsys, tmp_path):
     with patch("slokern.cli.commands.smoke_test.create_serving_adapter", side_effect=ConfigurationError("Missing auth")):
-        ret = smoke_test_command(adapter="nebius")
+        ret = smoke_test_command(adapter="nebius", artifact_path=str(tmp_path / "smoke.json"))
         assert ret == 1
         captured = capsys.readouterr()
         assert "[FAIL] Configuration Error: Missing auth" in captured.err
 
 
-def test_smoke_test_unhealthy_endpoint(capsys):
+def test_smoke_test_unhealthy_endpoint(capsys, tmp_path):
     mock_adapter = MagicMock()
     mock_adapter.runtime_name = "test-runtime"
     mock_adapter.model_name = "test-model"
@@ -42,13 +42,13 @@ def test_smoke_test_unhealthy_endpoint(capsys):
     mock_adapter.health_check.return_value = False
 
     with patch("slokern.cli.commands.smoke_test.create_serving_adapter", return_value=mock_adapter):
-        ret = smoke_test_command(adapter="local")
+        ret = smoke_test_command(adapter="local", artifact_path=str(tmp_path / "smoke.json"))
         assert ret == 1
         captured = capsys.readouterr()
         assert "[FAIL] Health check failed" in captured.err
 
 
-def test_smoke_test_probe_request_error(capsys):
+def test_smoke_test_probe_request_error(capsys, tmp_path):
     mock_adapter = MagicMock()
     mock_adapter.runtime_name = "test-runtime"
     mock_adapter.model_name = "test-model"
@@ -65,7 +65,7 @@ def test_smoke_test_probe_request_error(capsys):
     )
 
     with patch("slokern.cli.commands.smoke_test.create_serving_adapter", return_value=mock_adapter):
-        ret = smoke_test_command(adapter="local")
+        ret = smoke_test_command(adapter="local", artifact_path=str(tmp_path / "smoke.json"))
         assert ret == 1
         captured = capsys.readouterr()
         assert "[FAIL] Request failed with HTTP 500: Internal Server Error" in captured.err
@@ -88,7 +88,7 @@ def test_smoke_test_artifact_persistence(tmp_path):
     assert data["streaming_probe"]["stream_success"] is True
 
 
-def test_smoke_test_one_request_enforcement():
+def test_smoke_test_one_request_enforcement(tmp_path):
     mock_adapter = MagicMock()
     mock_adapter.runtime_name = "test-runtime"
     mock_adapter.model_name = "test-model"
@@ -105,14 +105,14 @@ def test_smoke_test_one_request_enforcement():
     )
 
     with patch("slokern.cli.commands.smoke_test.create_serving_adapter", return_value=mock_adapter):
-        ret = smoke_test_command(adapter="local", stream=False)
+        ret = smoke_test_command(adapter="local", stream=False, artifact_path=str(tmp_path / "smoke.json"))
         assert ret == 0
         # Exactly one call to generate, zero calls to stream_generate
         assert mock_adapter.generate.call_count == 1
         assert mock_adapter.stream_generate.call_count == 0
 
 
-def test_smoke_test_one_request_enforcement_streaming():
+def test_smoke_test_one_request_enforcement_streaming(tmp_path):
     from slokern.engine.serving.base import TokenChunk
     mock_adapter = MagicMock()
     mock_adapter.runtime_name = "test-runtime"
@@ -124,7 +124,7 @@ def test_smoke_test_one_request_enforcement_streaming():
     ]
 
     with patch("slokern.cli.commands.smoke_test.create_serving_adapter", return_value=mock_adapter):
-        ret = smoke_test_command(adapter="local", stream=True)
+        ret = smoke_test_command(adapter="local", stream=True, artifact_path=str(tmp_path / "smoke.json"))
         assert ret == 0
         # Exactly one call to stream_generate, zero calls to generate
         assert mock_adapter.stream_generate.call_count == 1

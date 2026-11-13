@@ -123,7 +123,7 @@ export const TuningLabView: React.FC<TuningLabViewProps> = ({
                       {paretoIds.has(c.id) && (
                         <span
                           style={{
-                            fontSize: '9px',
+                            fontSize: '11px',
                             fontFamily: 'var(--font-mono, monospace)',
                             fontWeight: 700,
                             padding: '2px 5px',

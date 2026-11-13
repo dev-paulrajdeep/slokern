@@ -298,33 +298,26 @@ def _sync_dispatch_loop(
     timeout: Optional[float] = None,
     progress_callback: Optional[Callable[[int, int, Optional[float]], None]] = None,
 ) -> LoadGeneratorResult:
-    """Synchronous open-loop dispatch fallback for environments where loopback socketpair is restricted."""
+    """Synchronous open-loop dispatch fallback using worker threadpool for concurrent non-blocking dispatch."""
+    import concurrent.futures
+
     prompt_list = prompts if prompts else [
         f"Benchmark prompt for {workload.workload_name} request execution under SLOKern loadgen."
     ]
 
+    concurrency_limit = max(1, workload.concurrency_limit)
+    semaphore = threading.Semaphore(concurrency_limit)
+    callback_lock = threading.Lock()
     recorder = JSONLRecorder(file_path=output_path, flush_immediately=True)
     t_start = time.time()
     schedule = ArrivalSchedule.from_workload_spec(workload, seed=seed, start_time=t_start)
     slots = list(schedule)
     task_error: Optional[str] = None
 
-    try:
-        for slot in slots:
+    def _dispatch_worker(slot: ArrivalSlot) -> None:
+        with semaphore:
             if is_cancelled is not None and is_cancelled():
-                break
-            now = time.time()
-            if timeout is not None and (now - t_start) >= timeout:
-                raise TimeoutError(f"In-process load generation timed out after {timeout:.3f}s")
-            wait_time = slot.scheduled_at - now
-            if wait_time > 0:
-                if timeout is not None and (now - t_start + wait_time) >= timeout:
-                    time.sleep(max(0.0, timeout - (now - t_start)))
-                    raise TimeoutError(f"In-process load generation timed out after {timeout:.3f}s")
-                time.sleep(wait_time)
-            if is_cancelled is not None and is_cancelled():
-                break
-
+                return
             if artificial_dispatch_delay_ms > 0:
                 time.sleep(artificial_dispatch_delay_ms / 1000.0)
 
@@ -447,7 +440,35 @@ def _sync_dispatch_loop(
                 current_ttft = None
                 if measurement.first_token_at is not None:
                     current_ttft = round((measurement.first_token_at - measurement.sent_at) * 1000.0, 2)
-                progress_callback(slot.index + 1, len(slots), current_ttft)
+                with callback_lock:
+                    progress_callback(slot.index + 1, len(slots), current_ttft)
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency_limit) as pool:
+            futures = []
+            for slot in slots:
+                if is_cancelled is not None and is_cancelled():
+                    break
+                now = time.time()
+                if timeout is not None and (now - t_start) >= timeout:
+                    raise TimeoutError(f"In-process load generation timed out after {timeout:.3f}s")
+                wait_time = slot.scheduled_at - now
+                if wait_time > 0:
+                    if timeout is not None and (now - t_start + wait_time) >= timeout:
+                        time.sleep(max(0.0, timeout - (now - t_start)))
+                        raise TimeoutError(f"In-process load generation timed out after {timeout:.3f}s")
+                    time.sleep(wait_time)
+                if is_cancelled is not None and is_cancelled():
+                    break
+
+                futures.append(pool.submit(_dispatch_worker, slot))
+
+            if futures:
+                concurrent.futures.wait(futures)
+                for f in futures:
+                    exc = f.exception()
+                    if exc is not None and task_error is None:
+                        task_error = f"{type(exc).__name__}: {exc}"
     except TimeoutError:
         raise
     except Exception as exc:

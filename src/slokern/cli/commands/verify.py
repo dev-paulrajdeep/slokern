@@ -66,6 +66,7 @@ def verify_command(
     # Reconstruct candidate configuration
     requested_settings = {}
     effective_settings = {}
+    original_run_id = None
     runs_dir = result_path.parent / "runs"
     if runs_dir.exists():
         for run_dir in runs_dir.iterdir():
@@ -76,6 +77,7 @@ def verify_command(
                     if saved_cfg.candidate_id == winner_id:
                         requested_settings = saved_cfg.requested_settings
                         effective_settings = saved_cfg.effective_settings
+                        original_run_id = run_dir.name
                         break
                 except Exception:
                     pass
@@ -99,12 +101,20 @@ def verify_command(
     resolved_out_dir.mkdir(parents=True, exist_ok=True)
 
     try:
+        from slokern.core.verification.compare import DriftPolicy
+        drift_policy = (
+            DriftPolicy.from_verification_policy(spec.verification_policy)
+            if getattr(spec, "verification_policy", None)
+            else None
+        )
+        resolved_orig_run_id = original_run_id or f"run-search-{winner_id[:8]}"
         record = run_independent_verification(
-            original_run_id=f"run-search-{winner_id[:8]}",
+            original_run_id=resolved_orig_run_id,
             candidate_config=candidate_config,
             workload=spec.workload,
             slo=spec.slo,
             experiment_id=spec.experiment_id,
+            drift_policy=drift_policy,
             adapter=serving_adapter,
             artifacts_root=output_dir or "artifacts",
             isolate_process=False,

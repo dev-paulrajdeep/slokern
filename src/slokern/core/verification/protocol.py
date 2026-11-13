@@ -21,6 +21,7 @@ from slokern.contracts.metrics import MetricSet
 from slokern.contracts.run import RunRecord
 from slokern.contracts.search import SearchResult
 from slokern.contracts.spec import SLOSpec, WorkloadSpec
+from slokern.contracts.verdict import FeasibilityResult
 from slokern.contracts.verification import VerificationRecord
 from slokern.core.evaluator.evaluate import evaluate_slo
 from slokern.core.verification.compare import DriftPolicy, compare_metrics
@@ -218,6 +219,7 @@ def verify_search_campaign(
     winning_run_dir: Optional[Path] = None
     winning_run_record: Optional[RunRecord] = None
     existing_run_ids: List[str] = []
+    best_run_score = (-1, -1, 0.0)
 
     for run_path in sorted(runs_dir.iterdir()):
         if not run_path.is_dir():
@@ -229,8 +231,23 @@ def verify_search_campaign(
                 existing_run_ids.append(rec.run_id)
                 # Match winning search run (not a previous verification run)
                 if rec.candidate_id == winner_id and not rec.is_verification_run:
-                    winning_run_dir = run_path
-                    winning_run_record = rec
+                    val_score = 1
+                    verd_score = 0
+                    feas_path = run_path / "feasibility.json"
+                    if feas_path.is_file():
+                        try:
+                            feas_data = json.loads(feas_path.read_text(encoding="utf-8"))
+                            val_status = feas_data.get("validity_status")
+                            verdict_val = feas_data.get("overall_verdict")
+                            val_score = {"VALID": 3, "STALE": 2, "INVALID": 0, "CONTAMINATED": -1}.get(val_status, 1)
+                            verd_score = {"FEASIBLE": 2, "INFEASIBLE": 1, "INCONCLUSIVE": 0}.get(verdict_val, 0)
+                        except Exception:
+                            pass
+                    run_score = (val_score, verd_score, run_path.stat().st_mtime)
+                    if winning_run_dir is None or run_score > best_run_score:
+                        winning_run_dir = run_path
+                        winning_run_record = rec
+                        best_run_score = run_score
             except Exception:
                 continue
 
@@ -258,14 +275,35 @@ def verify_search_campaign(
     if resolved_workload is None or resolved_slo is None:
         # Check report.json or spec.json for workload and slo
         report_path = exp_dir / "report.json"
-        if report_path.is_file():
+        spec_path = exp_dir / "experiment_spec.json"
+        exp_spec = {}
+        if spec_path.is_file():
+            try:
+                exp_spec = json.loads(spec_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        elif report_path.is_file():
             try:
                 report_data = json.loads(report_path.read_text(encoding="utf-8"))
                 exp_spec = report_data.get("experiment_spec", {})
-                if resolved_workload is None and "workload" in exp_spec:
-                    resolved_workload = WorkloadSpec.model_validate(exp_spec["workload"])
-                if resolved_slo is None and "slo" in exp_spec:
-                    resolved_slo = SLOSpec.model_validate(exp_spec["slo"])
+            except Exception:
+                pass
+
+        if resolved_workload is None and "workload" in exp_spec:
+            try:
+                resolved_workload = WorkloadSpec.model_validate(exp_spec["workload"])
+            except Exception:
+                pass
+        if resolved_slo is None and "slo" in exp_spec:
+            try:
+                resolved_slo = SLOSpec.model_validate(exp_spec["slo"])
+            except Exception:
+                pass
+        if drift_policy is None and "verification_policy" in exp_spec:
+            try:
+                from slokern.contracts.spec import ExperimentVerificationPolicy
+                vpol = ExperimentVerificationPolicy.model_validate(exp_spec["verification_policy"])
+                drift_policy = DriftPolicy.from_verification_policy(vpol)
             except Exception:
                 pass
 

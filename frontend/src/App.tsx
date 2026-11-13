@@ -5,6 +5,7 @@ import type { WorkspaceDestination } from './components/layout/Sidebar';
 import { StatusBar } from './components/layout/StatusBar';
 import type { ScenarioType } from './components/layout/StatusBar';
 import { SlideOverDrawer, CandidateDiagnosticsPanel } from './components/layout/SlideOverDrawer';
+import { CampaignLaunchDrawer } from './components/campaign/CampaignLaunchDrawer';
 import { OverviewView } from './views/OverviewView';
 import { WorkloadsView } from './views/WorkloadsView';
 import { ExperimentsView } from './views/ExperimentsView';
@@ -64,12 +65,40 @@ export function App() {
   const [inspectCandidate, setInspectCandidate] = useState<UICandidate | null>(null);
   const [inspectExperiment, setInspectExperiment] = useState<UIExperiment | null>(null);
   const [isRuntimeModalOpen, setIsRuntimeModalOpen] = useState(false);
+  const [isCampaignDrawerOpen, setIsCampaignDrawerOpen] = useState(false);
   const [isShortcutsHudOpen, setIsShortcutsHudOpen] = useState(false);
   const [toastNotification, setToastNotification] = useState<string | null>(null);
 
   const triggerToast = (msg: string) => {
     setToastNotification(msg);
     setTimeout(() => setToastNotification(null), 3200);
+  };
+
+  const refreshData = (targetExpId?: string) => {
+    listExperiments()
+      .then((exps) => {
+        if (exps && exps.length > 0) {
+          setExperimentsList(exps);
+          const chosen = targetExpId || exps[0].id;
+          setActiveExperimentId(chosen);
+          getExperimentCandidates(chosen)
+            .then((cands) => {
+              if (cands && cands.length > 0) {
+                setApiCandidates(cands);
+                const winner = cands.find((c) => c.tag === 'WINNER') || cands[0];
+                setSelectedCandidateId(winner.id);
+              }
+            })
+            .catch(() => {});
+          getExperimentVerification(chosen)
+            .then((verif) => setVerificationRecord(verif))
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+    listReports()
+      .then((reps) => setAvailableReports(reps))
+      .catch(() => {});
   };
 
   // Fluid View-Transition Navigators
@@ -618,6 +647,7 @@ export function App() {
         }
         onOpenRuntimeModal={() => setIsRuntimeModalOpen(true)}
         onRunSmokeProbe={handleRunSmokeProbe}
+        onOpenCampaignDrawer={() => setIsCampaignDrawerOpen(true)}
         isProbing={isProbing}
       />
 
@@ -718,6 +748,7 @@ export function App() {
                   });
                 }}
                 onOpenCandidateDrawer={handleOpenCandidateDrawer}
+                onOpenCampaignDrawer={() => setIsCampaignDrawerOpen(true)}
               />
             )}
 
@@ -835,6 +866,20 @@ export function App() {
           </div>
         )}
       </SlideOverDrawer>
+
+      {/* Optimization Campaign Execution Drawer with SSE Progress Streaming */}
+      <CampaignLaunchDrawer
+        isOpen={isCampaignDrawerOpen}
+        onClose={() => setIsCampaignDrawerOpen(false)}
+        onCampaignCompleted={(campaignId) => {
+          triggerToast(`Campaign ${campaignId} completed!`);
+          refreshData(campaignId);
+        }}
+        onSelectExperiment={(expId) => {
+          setActiveExperimentId(expId);
+          navigateWorkspace('Tuning Lab');
+        }}
+      />
 
       {/* Runtime Environment Profile Modal */}
       {isRuntimeModalOpen && (

@@ -6,6 +6,7 @@ interface ContextBarProps {
   runtimeName?: string;
   onOpenRuntimeModal?: () => void;
   onRunSmokeProbe?: () => void;
+  onOpenCampaignDrawer?: () => void;
   isProbing?: boolean;
 }
 
@@ -14,6 +15,7 @@ export const ContextBar: React.FC<ContextBarProps> = ({
   runtimeName = 'vLLM v0.6.3 · Nebius H100 SXM5',
   onOpenRuntimeModal,
   onRunSmokeProbe,
+  onOpenCampaignDrawer,
   isProbing = false,
 }) => {
   return (
@@ -126,6 +128,33 @@ export const ContextBar: React.FC<ContextBarProps> = ({
           />
           <span>{runtimeName}</span>
         </button>
+
+        {onOpenCampaignDrawer && (
+          <button
+            type="button"
+            onClick={onOpenCampaignDrawer}
+            data-testid="run-campaign-btn"
+            style={{
+              background: 'var(--primary, #76B900)',
+              border: 'none',
+              color: '#0E120F',
+              fontSize: '11px',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontWeight: 800,
+              padding: '4px 10px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              letterSpacing: '0.04em',
+            }}
+            title="Open Optimization Campaign Execution Drawer"
+          >
+            <span>▶</span>
+            <span>Run Campaign</span>
+          </button>
+        )}
 
         {onRunSmokeProbe && (
           <button

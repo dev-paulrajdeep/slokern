@@ -14,6 +14,7 @@ interface TuningLabViewProps {
   rankingObjective?: string | null;
   onSelectCandidate: (candidate: UICandidate) => void;
   onOpenCandidateDrawer: (candidate: UICandidate) => void;
+  onOpenCampaignDrawer?: () => void;
 }
 
 export const TuningLabView: React.FC<TuningLabViewProps> = ({
@@ -23,6 +24,7 @@ export const TuningLabView: React.FC<TuningLabViewProps> = ({
   rankingObjective,
   onSelectCandidate,
   onOpenCandidateDrawer,
+  onOpenCampaignDrawer,
 }) => {
   const [copyFeedback, setCopyFeedback] = useState(false);
 
@@ -58,6 +60,32 @@ export const TuningLabView: React.FC<TuningLabViewProps> = ({
             {hasFeasibleCandidate ? 'Comparing' : 'No feasible candidate'} · {candidates.length} bounded serving profiles against baseline reference · Search objective: <span style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-primary, #F0F3EF)' }}>{rankingObjective ?? 'Unavailable'}</span> · DEMO DATA · OFFLINE OPTIMIZATION
           </p>
         </div>
+
+        {onOpenCampaignDrawer && (
+          <button
+            type="button"
+            onClick={onOpenCampaignDrawer}
+            data-testid="tuning-lab-run-campaign-btn"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              backgroundColor: 'var(--primary, #76B900)',
+              border: 'none',
+              borderRadius: '4px',
+              color: '#0E120F',
+              fontSize: '12px',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontWeight: 800,
+              cursor: 'pointer',
+              letterSpacing: '0.04em',
+            }}
+          >
+            <span>▶</span>
+            <span>Run 2x2 Campaign</span>
+          </button>
+        )}
       </div>
 
       {/* Master-Detail Layout */}

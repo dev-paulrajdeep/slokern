@@ -251,3 +251,64 @@ export function subscribeRunProgress(
     };
   }
 }
+
+export interface CampaignDispatchResponse {
+  campaign_id: string;
+  stream_url: string;
+  status: string;
+  message: string;
+}
+
+export async function launchCampaign(payload: Record<string, any>): Promise<CampaignDispatchResponse> {
+  return request<CampaignDispatchResponse>('/api/campaigns/run', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function subscribeCampaignStream(
+  campaignId: string,
+  onEvent: (event: any) => void,
+  onClose?: () => void,
+  onError?: (err: any) => void
+): () => void {
+  let isClosed = false;
+  const sseUrl = `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/stream`;
+  let eventSource: EventSource | null = null;
+
+  try {
+    eventSource = new EventSource(sseUrl);
+
+    eventSource.onmessage = (e) => {
+      if (isClosed) return;
+      try {
+        const data = JSON.parse(e.data);
+        onEvent(data);
+        if (data.type === 'campaign_completed' || data.type === 'campaign_failed') {
+          isClosed = true;
+          eventSource?.close();
+          onClose?.();
+        }
+      } catch {
+        // ignore parse error
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      if (!isClosed) {
+        onError?.(err);
+        isClosed = true;
+        eventSource?.close();
+        onClose?.();
+      }
+    };
+  } catch (err) {
+    onError?.(err);
+    onClose?.();
+  }
+
+  return () => {
+    isClosed = true;
+    if (eventSource) eventSource.close();
+  };
+}

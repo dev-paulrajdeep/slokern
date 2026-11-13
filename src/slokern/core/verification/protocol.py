@@ -7,7 +7,7 @@ Authority: Aligned with AGENTS.md Section 5, 7, and DEC-0014
 import json
 import uuid
 from pathlib import Path
-from typing import Any, List, Optional, Sequence, Union
+from typing import Any, Callable, List, Optional, Sequence, Union
 
 from slokern.contracts.config import CandidateConfig
 from slokern.contracts.enums import (
@@ -50,6 +50,7 @@ def run_independent_verification(
     isolate_process: bool = False,
     persist_record: bool = True,
     existing_run_ids: Optional[Sequence[str]] = None,
+    progress_callback: Optional[Callable[[int, int, Optional[float]], None]] = None,
 ) -> VerificationRecord:
     """
     Reruns winning candidate configuration under a fresh, independent run ID,
@@ -89,6 +90,7 @@ def run_independent_verification(
         stream=stream,
         prompts=prompts,
         raise_on_failure=False,
+        progress_callback=progress_callback,
     )
 
     drift = None

@@ -18,6 +18,12 @@ from slokern.api.routes.health import (
     get_runtime_profile,
     run_smoke_probe,
 )
+from slokern.api.routes.campaigns import (
+    dispatch_campaign_run,
+    get_campaign_queue,
+    get_campaign_status,
+    list_campaigns,
+)
 from slokern.api.routes.experiments import (
     list_experiments,
     get_experiment_detail,
@@ -157,6 +163,26 @@ def handle_api_request(
             res = dispatch_verification_run(payload, artifacts_root=artifacts_root)
             return 200, headers, json.dumps(res).encode("utf-8")
 
+        # POST /api/campaigns/run
+        if method == "POST" and clean_path == "/api/campaigns/run":
+            status_code, res = dispatch_campaign_run(parsed_body, artifacts_root=artifacts_root)
+            return status_code, headers, json.dumps(res).encode("utf-8")
+
+        # GET /api/campaigns
+        if method == "GET" and clean_path == "/api/campaigns":
+            res = list_campaigns(artifacts_root=artifacts_root)
+            return 200, headers, json.dumps(res).encode("utf-8")
+
+        # GET /api/campaigns/<campaign_id>
+        match_camp = re.match(r"^/api/campaigns/(.+)$", clean_path)
+        if method == "GET" and match_camp:
+            campaign_id = match_camp.group(1)
+            if not re.match(r"^[a-zA-Z0-9_\-]+$", campaign_id):
+                return 400, headers, json.dumps({"error": f"Invalid campaign_id format: {campaign_id}"}).encode("utf-8")
+            res = get_campaign_status(campaign_id, artifacts_root=artifacts_root)
+            status = 404 if res.get("error") == "Campaign not found" else 200
+            return status, headers, json.dumps(res).encode("utf-8")
+
         # GET /api/runtime
         if method == "GET" and clean_path == "/api/runtime":
             res = get_runtime_profile(artifacts_root=artifacts_root)
@@ -266,6 +292,47 @@ class SlokernHTTPRequestHandler(BaseHTTPRequestHandler):
                 self._send_cors_headers()
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": f"Active run queue not found for {run_id}"}).encode("utf-8"))
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self._send_cors_headers()
+            self.end_headers()
+
+            try:
+                while True:
+                    event = queue.get(timeout=1.0)
+                    if event is None:
+                        if queue.is_closed:
+                            break
+                        continue
+                    self.wfile.write(event.encode("utf-8"))
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
+        # Server-Sent Events stream: /api/campaigns/<campaign_id>/stream
+        match_camp_sse = re.match(r"^/api/campaigns/(.+)/stream$", clean_path)
+        if match_camp_sse:
+            campaign_id = match_camp_sse.group(1)
+            if not re.match(r"^[a-zA-Z0-9_\-]+$", campaign_id):
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Invalid campaign_id format: {campaign_id}"}).encode("utf-8"))
+                return
+
+            queue = get_campaign_queue(campaign_id)
+            if not queue:
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Active campaign stream not found for {campaign_id}"}).encode("utf-8"))
                 return
 
             self.send_response(200)

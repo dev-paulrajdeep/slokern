@@ -176,6 +176,10 @@ export function reduceCampaignTimelineEvent(
         rationale: event.selection_rationale || '',
         rankingMetric: event.ranking_metric,
       };
+      if (!event.winner_id && state.runs[5]) {
+        state.runs[5].status = 'completed';
+        state.runs[5].verdict = 'INCONCLUSIVE';
+      }
       return state;
     }
 
@@ -194,6 +198,12 @@ export function reduceCampaignTimelineEvent(
         state.runs[5].status = 'completed';
         state.runs[5].verdict = event.verification_verdict;
         state.runs[5].progressPercent = 100;
+        if (event.candidate_id) {
+          state.runs[5].candidateId = event.candidate_id;
+        }
+        if (event.verification_run_id) {
+          state.runs[5].runId = event.verification_run_id;
+        }
       }
       state.verificationOutcome = {
         verdict: event.verification_verdict,
@@ -205,6 +215,12 @@ export function reduceCampaignTimelineEvent(
 
     case 'campaign_completed': {
       state.status = 'completed';
+      if (state.runs[5] && state.runs[5].status === 'pending') {
+        state.runs[5].status = 'completed';
+        if (!state.runs[5].verdict) {
+          state.runs[5].verdict = state.winner?.id ? null : 'INCONCLUSIVE';
+        }
+      }
       return state;
     }
 

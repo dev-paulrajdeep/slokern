@@ -213,4 +213,55 @@ describe('CampaignLaunchDrawer Model & SSE Reducer', () => {
     assert.equal(state.status, 'failed');
     assert.equal(state.error, 'CUDA Out of Memory during run 2');
   });
+
+  it('verifies timeline transition when all candidates are infeasible (no winner selected)', () => {
+    let state = createInitialTimelineState();
+    state = reduceCampaignTimelineEvent(state, {
+      type: 'campaign_started',
+      campaign_id: 'cmp-infeasible-01',
+      total_runs: 6,
+    });
+
+    // Complete all 5 search runs as INFEASIBLE
+    for (let i = 0; i < 5; i++) {
+      state = reduceCampaignTimelineEvent(state, {
+        type: 'candidate_started',
+        run_index: i,
+        candidate_id: `cand-${i}`,
+        run_id: `run-${i}`,
+      });
+      state = reduceCampaignTimelineEvent(state, {
+        type: 'candidate_completed',
+        run_index: i,
+        candidate_id: `cand-${i}`,
+        verdict: 'INFEASIBLE',
+        ranking_metric: null,
+      });
+    }
+
+    // Winner selected event with winner_id: null
+    state = reduceCampaignTimelineEvent(state, {
+      type: 'winner_selected',
+      campaign_id: 'cmp-infeasible-01',
+      winner_id: null,
+      winning_config: {},
+      selection_rationale: 'No candidate satisfied declared hard SLO constraints.',
+      ranking_metric: null,
+    });
+
+    assert.equal(state.winner?.id, null);
+    // Run 5 must NOT remain pending
+    assert.equal(state.runs[5].status, 'completed');
+    assert.equal(state.runs[5].verdict, 'INCONCLUSIVE');
+
+    // Campaign completed
+    state = reduceCampaignTimelineEvent(state, {
+      type: 'campaign_completed',
+      campaign_id: 'cmp-infeasible-01',
+      winner_id: null,
+      is_verified: false,
+    });
+    assert.equal(state.status, 'completed');
+    assert.equal(state.runs[5].status, 'completed');
+  });
 });

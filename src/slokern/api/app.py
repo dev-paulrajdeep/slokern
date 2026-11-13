@@ -301,17 +301,21 @@ class SlokernHTTPRequestHandler(BaseHTTPRequestHandler):
             self._send_cors_headers()
             self.end_headers()
 
+            sub_queue = queue.subscribe() if hasattr(queue, "subscribe") else queue
             try:
                 while True:
-                    event = queue.get(timeout=1.0)
+                    event = sub_queue.get(timeout=1.0)
                     if event is None:
-                        if queue.is_closed:
+                        if getattr(queue, "is_closed", False):
                             break
                         continue
                     self.wfile.write(event.encode("utf-8"))
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
+            finally:
+                if hasattr(queue, "unsubscribe") and sub_queue is not queue:
+                    queue.unsubscribe(sub_queue)
             return
 
         # Server-Sent Events stream: /api/campaigns/<campaign_id>/stream
@@ -342,17 +346,21 @@ class SlokernHTTPRequestHandler(BaseHTTPRequestHandler):
             self._send_cors_headers()
             self.end_headers()
 
+            sub_queue = queue.subscribe() if hasattr(queue, "subscribe") else queue
             try:
                 while True:
-                    event = queue.get(timeout=1.0)
+                    event = sub_queue.get(timeout=1.0)
                     if event is None:
-                        if queue.is_closed:
+                        if getattr(queue, "is_closed", False):
                             break
                         continue
                     self.wfile.write(event.encode("utf-8"))
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
+            finally:
+                if hasattr(queue, "unsubscribe") and sub_queue is not queue:
+                    queue.unsubscribe(sub_queue)
             return
 
         # Standard REST GET dispatch

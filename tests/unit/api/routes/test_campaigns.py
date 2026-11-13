@@ -257,3 +257,211 @@ def test_campaign_status_and_listing(tmp_path: Path):
     assert status == 200
     campaigns = json.loads(body.decode("utf-8"))
     assert isinstance(campaigns, list)
+
+
+def test_campaign_model_name_propagation(tmp_path: Path):
+    """
+    Verifies that explicit model_name in campaign payload propagates to campaign_started
+    SSE event and background adapter initialization.
+    """
+    campaign_id = "cmp-test-model-prop-01"
+    custom_model = "custom-qwen-test-model"
+    payload = {
+        "campaign_id": campaign_id,
+        "adapter": "fake",
+        "model_name": custom_model,
+        "workload": {
+            "workload_name": "model-prop-workload",
+            "target_offered_rate": 5.0,
+            "measurement_duration_s": 1,
+            "concurrency_limit": 1,
+        },
+        "slo": {
+            "p95_ttft_threshold": 500.0,
+            "max_error_rate": 0.05,
+        },
+    }
+
+    status, res = dispatch_campaign_run(payload, artifacts_root=str(tmp_path))
+    assert status == 202
+
+    queue = get_campaign_queue(campaign_id)
+    assert queue is not None
+
+    # Wait for campaign_started event
+    deadline = time.time() + 10.0
+    started_event = None
+    while time.time() < deadline:
+        evt_str = queue.get(timeout=0.5)
+        if evt_str:
+            raw = json.loads(evt_str[len("data: "):].strip())
+            if raw.get("type") == "campaign_started":
+                started_event = raw
+                break
+
+    assert started_event is not None
+    assert started_event["model_name"] == custom_model
+
+
+def test_campaign_all_infeasible_candidates(tmp_path: Path):
+    """
+    Verifies campaign lifecycle when no candidate satisfies the declared SLO:
+    - winner_selected emits winner_id: None
+    - verification_completed emits INCONCLUSIVE verdict and is_verified: False
+    - campaign_completed finishes cleanly with is_verified: False
+    """
+    campaign_id = "cmp-test-all-infeasible-01"
+    payload = {
+        "campaign_id": campaign_id,
+        "adapter": "fake",
+        "workload": {
+            "workload_name": "infeasible-workload",
+            "target_offered_rate": 5.0,
+            "measurement_duration_s": 1,
+            "concurrency_limit": 1,
+        },
+        "slo": {
+            # Impossible threshold guarantees all candidates fail
+            "p95_ttft_threshold": 0.0001,
+            "max_error_rate": 0.0,
+        },
+    }
+
+    status, _ = dispatch_campaign_run(payload, artifacts_root=str(tmp_path))
+    assert status == 202
+
+    queue = get_campaign_queue(campaign_id)
+    assert queue is not None
+
+    events = []
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        evt_str = queue.get(timeout=0.5)
+        if evt_str is None:
+            if queue.is_closed:
+                break
+            continue
+        raw = json.loads(evt_str[len("data: "):].strip())
+        events.append(raw)
+        if raw.get("type") == "campaign_completed":
+            break
+
+    event_types = [e["type"] for e in events]
+    assert "winner_selected" in event_types
+    winner_evt = next(e for e in events if e["type"] == "winner_selected")
+    assert winner_evt["winner_id"] is None
+
+    assert "verification_completed" in event_types
+    verif_evt = next(e for e in events if e["type"] == "verification_completed")
+    assert verif_evt["verification_verdict"] == "INCONCLUSIVE"
+    assert verif_evt["is_verified"] is False
+
+    assert "campaign_completed" in event_types
+    comp_evt = next(e for e in events if e["type"] == "campaign_completed")
+    assert comp_evt["winner_id"] is None
+    assert comp_evt["is_verified"] is False
+
+    camp_dir = tmp_path / "experiments" / campaign_id
+    assert (camp_dir / "search_result.json").exists()
+    search_data = json.loads((camp_dir / "search_result.json").read_text(encoding="utf-8"))
+    assert search_data["selected_candidate_id"] is None
+
+
+def test_campaign_sse_multi_subscriber_and_replay(tmp_path: Path):
+    """
+    Verifies that SSEEventQueue replays history to subscribers connecting late or reconnecting.
+    """
+    campaign_id = "cmp-test-replay-01"
+    payload = {
+        "campaign_id": campaign_id,
+        "adapter": "fake",
+        "workload": {
+            "workload_name": "replay-workload",
+            "target_offered_rate": 5.0,
+            "measurement_duration_s": 1,
+            "concurrency_limit": 1,
+        },
+        "slo": {
+            "p95_ttft_threshold": 500.0,
+            "max_error_rate": 0.05,
+        },
+    }
+
+    status, _ = dispatch_campaign_run(payload, artifacts_root=str(tmp_path))
+    assert status == 202
+
+    queue = get_campaign_queue(campaign_id)
+    assert queue is not None
+
+    # Wait until campaign is completed
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        st = get_campaign_status(campaign_id, artifacts_root=str(tmp_path))
+        if st.get("status") == "COMPLETED":
+            break
+        time.sleep(0.2)
+
+    # Now a late subscriber connects to the stream via subscribe()
+    sub_queue = queue.subscribe()
+    replayed_events = []
+    while True:
+        evt_str = sub_queue.get(timeout=0.5)
+        if evt_str is None:
+            break
+        raw = json.loads(evt_str[len("data: "):].strip())
+        replayed_events.append(raw)
+
+    replayed_types = [e["type"] for e in replayed_events]
+    assert "campaign_started" in replayed_types
+    assert "candidate_completed" in replayed_types
+    assert "winner_selected" in replayed_types
+    assert "campaign_completed" in replayed_types
+    assert replayed_types[0] == "campaign_started"
+    assert replayed_types[-1] == "campaign_completed"
+
+
+def test_campaign_large_event_volume_no_drops(tmp_path: Path):
+    """
+    Verifies that a campaign producing >100 events does not drop any lifecycle events
+    or hang due to queue capacity.
+    """
+    campaign_id = "cmp-test-large-volume-01"
+    payload = {
+        "campaign_id": campaign_id,
+        "adapter": "fake",
+        "workload": {
+            "workload_name": "large-volume-workload",
+            "target_offered_rate": 20.0,
+            "measurement_duration_s": 2,  # 40 requests per run * 6 runs = 240+ requests
+            "concurrency_limit": 2,
+        },
+        "slo": {
+            "p95_ttft_threshold": 500.0,
+            "max_error_rate": 0.05,
+        },
+    }
+
+    status, _ = dispatch_campaign_run(payload, artifacts_root=str(tmp_path))
+    assert status == 202
+
+    queue = get_campaign_queue(campaign_id)
+    assert queue is not None
+
+    events = []
+    deadline = time.time() + 20.0
+    while time.time() < deadline:
+        evt_str = queue.get(timeout=0.5)
+        if evt_str is None:
+            if queue.is_closed:
+                break
+            continue
+        raw = json.loads(evt_str[len("data: "):].strip())
+        events.append(raw)
+        if raw.get("type") == "campaign_completed":
+            break
+
+    assert len(events) > 100
+    event_types = [e["type"] for e in events]
+    assert "campaign_started" in event_types
+    assert "campaign_completed" in event_types
+    assert event_types[-1] == "campaign_completed"

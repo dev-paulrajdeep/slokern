@@ -56,6 +56,7 @@ def _execute_campaign_worker(
     adapter_name: str,
     artifacts_root: str,
     sse_queue: SSEEventQueue,
+    model_name: Optional[str] = None,
 ) -> None:
     """
     Background campaign worker executing the 6-run campaign:
@@ -65,15 +66,14 @@ def _execute_campaign_worker(
     """
     try:
         adapter_kwargs = {}
-        target_model = getattr(spec.workload, "model_name", None)
-        if target_model:
-            adapter_kwargs["model_name"] = target_model
+        if model_name:
+            adapter_kwargs["model_name"] = model_name
         adapter = create_serving_adapter(
             backend=adapter_name,
             **adapter_kwargs,
         )
 
-        resolved_model = adapter.model_name or "meta-llama/Meta-Llama-3-8B-Instruct"
+        resolved_model = model_name or adapter.model_name or "meta-llama/Meta-Llama-3-8B-Instruct"
 
         single_run_executor = SingleRunExecutor(
             adapter=adapter,
@@ -310,6 +310,19 @@ def _execute_campaign_worker(
                 "is_verified": verif_record.verification_verdict == VerificationState.VERIFIED,
                 "drift_analysis": verif_record.drift_analysis.model_dump() if verif_record.drift_analysis else None,
                 "metric_deltas": verif_record.drift_analysis.metric_deltas if verif_record.drift_analysis else {},
+            })
+        else:
+            # Emit verification_completed for inconclusive outcome when no candidate satisfied hard SLO constraints
+            sse_queue.emit("verification_completed", {
+                "campaign_id": campaign_id,
+                "run_index": 5,
+                "verification_id": None,
+                "verification_run_id": None,
+                "verification_verdict": "INCONCLUSIVE",
+                "is_verified": False,
+                "drift_analysis": None,
+                "metric_deltas": {},
+                "reason": "Verification skipped: no candidate satisfied hard SLO constraints.",
             })
 
         # Persist report.md and report.json
@@ -556,6 +569,7 @@ def dispatch_campaign_run(
             "campaign_id": campaign_id,
             "status": "RUNNING",
             "adapter": norm_adapter,
+            "model_name": model_name,
             "workload": workload.model_dump(),
             "slo": slo.model_dump(),
             "search_space": search_space,
@@ -570,6 +584,7 @@ def dispatch_campaign_run(
             norm_adapter,
             artifacts_root,
             sse_queue,
+            model_name,
         ),
         daemon=True,
     )

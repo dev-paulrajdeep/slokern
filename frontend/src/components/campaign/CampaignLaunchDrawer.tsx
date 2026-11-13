@@ -56,6 +56,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
   const [timeline, setTimeline] = useState<CampaignTimelineState>(createInitialTimelineState());
   const [isLaunching, setIsLaunching] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const activeSubscriptionRef = React.useRef<(() => void) | null>(null);
 
   // Sync preset changes to input values
   const handleSelectPreset = (key: CampaignPresetKey) => {
@@ -83,13 +84,15 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
   // Clean up any active stream on unmount
   useEffect(() => {
     return () => {
-      // Cleanup on unmount
+      activeSubscriptionRef.current?.();
+      activeSubscriptionRef.current = null;
     };
   }, []);
 
   const handleLaunchCampaign = async () => {
     setIsLaunching(true);
     setErrorMessage(null);
+    activeSubscriptionRef.current?.();
     const initial = createInitialTimelineState();
     setTimeline(initial);
 
@@ -120,7 +123,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
       setTimeline((prev) => ({ ...prev, campaignId: res.campaign_id, status: 'running' }));
 
       // Subscribe to real-time SSE stream
-      subscribeCampaignStream(
+      activeSubscriptionRef.current = subscribeCampaignStream(
         res.campaign_id,
         (event) => {
           setTimeline((prev) => {
@@ -835,7 +838,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
                           }}
                         >
                           <span>{k} drift</span>
-                          <span style={{ fontWeight: 600 }}>{v >= 0 ? `+${v}%` : `${v}%`}</span>
+                          <span style={{ fontWeight: 600 }}>{typeof v === 'number' ? (v >= 0 ? `+${v.toFixed(1)}%` : `${v.toFixed(1)}%`) : `${v}%`}</span>
                         </div>
                       ))
                     ) : (

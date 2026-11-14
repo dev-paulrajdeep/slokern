@@ -5,6 +5,7 @@ Authority: Aligned with AGENTS.md Section 1, 3, 9, 12 and DEC-0014
 """
 
 import json
+import queue
 import re
 import sys
 import urllib.parse
@@ -285,8 +286,8 @@ class SlokernHTTPRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": f"Invalid run_id format: {run_id}"}).encode("utf-8"))
                 return
 
-            queue = get_run_queue(run_id)
-            if not queue:
+            event_queue = get_run_queue(run_id)
+            if not event_queue:
                 self.send_response(404)
                 self.send_header("Content-Type", "application/json")
                 self._send_cors_headers()
@@ -301,21 +302,31 @@ class SlokernHTTPRequestHandler(BaseHTTPRequestHandler):
             self._send_cors_headers()
             self.end_headers()
 
-            sub_queue = queue.subscribe() if hasattr(queue, "subscribe") else queue
+            sub_queue = event_queue.subscribe() if hasattr(event_queue, "subscribe") else event_queue
             try:
                 while True:
-                    event = sub_queue.get(timeout=1.0)
-                    if event is None:
-                        if getattr(queue, "is_closed", False):
+                    if getattr(self.server, "is_shutting_down", False):
+                        break
+                    try:
+                        event = sub_queue.get(timeout=1.0)
+                    except queue.Empty:
+                        if getattr(self.server, "is_shutting_down", False):
                             break
+                        # Idle timeout — send SSE keep-alive comment and continue streaming
+                        self.wfile.write(b": keep-alive\n\n")
+                        self.wfile.flush()
                         continue
+                    if event is None:
+                        # Sentinel: the upstream queue has closed the stream
+                        break
                     self.wfile.write(event.encode("utf-8"))
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
             finally:
-                if hasattr(queue, "unsubscribe") and sub_queue is not queue:
-                    queue.unsubscribe(sub_queue)
+                self.close_connection = True
+                if hasattr(event_queue, "unsubscribe") and sub_queue is not event_queue:
+                    event_queue.unsubscribe(sub_queue)
             return
 
         # Server-Sent Events stream: /api/campaigns/<campaign_id>/stream
@@ -330,8 +341,8 @@ class SlokernHTTPRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": f"Invalid campaign_id format: {campaign_id}"}).encode("utf-8"))
                 return
 
-            queue = get_campaign_queue(campaign_id)
-            if not queue:
+            event_queue = get_campaign_queue(campaign_id)
+            if not event_queue:
                 self.send_response(404)
                 self.send_header("Content-Type", "application/json")
                 self._send_cors_headers()
@@ -346,21 +357,31 @@ class SlokernHTTPRequestHandler(BaseHTTPRequestHandler):
             self._send_cors_headers()
             self.end_headers()
 
-            sub_queue = queue.subscribe() if hasattr(queue, "subscribe") else queue
+            sub_queue = event_queue.subscribe() if hasattr(event_queue, "subscribe") else event_queue
             try:
                 while True:
-                    event = sub_queue.get(timeout=1.0)
-                    if event is None:
-                        if getattr(queue, "is_closed", False):
+                    if getattr(self.server, "is_shutting_down", False):
+                        break
+                    try:
+                        event = sub_queue.get(timeout=1.0)
+                    except queue.Empty:
+                        if getattr(self.server, "is_shutting_down", False):
                             break
+                        # Idle timeout — send SSE keep-alive comment and continue streaming
+                        self.wfile.write(b": keep-alive\n\n")
+                        self.wfile.flush()
                         continue
+                    if event is None:
+                        # Sentinel: the upstream queue has closed the stream
+                        break
                     self.wfile.write(event.encode("utf-8"))
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
             finally:
-                if hasattr(queue, "unsubscribe") and sub_queue is not queue:
-                    queue.unsubscribe(sub_queue)
+                self.close_connection = True
+                if hasattr(event_queue, "unsubscribe") and sub_queue is not event_queue:
+                    event_queue.unsubscribe(sub_queue)
             return
 
         # Standard REST GET dispatch
@@ -404,6 +425,28 @@ class SlokernHTTPRequestHandler(BaseHTTPRequestHandler):
             super().log_message(format, *args)
 
 
+def close_all_active_queues() -> None:
+    """
+    Closes all active run and campaign SSE queues to unblock streaming worker threads.
+    """
+    try:
+        from slokern.api.routes.runs import ACTIVE_QUEUES, RUNS_LOCK
+        with RUNS_LOCK:
+            for q in list(ACTIVE_QUEUES.values()):
+                if hasattr(q, "close"):
+                    q.close()
+    except Exception:
+        pass
+    try:
+        from slokern.api.routes.campaigns import ACTIVE_CAMPAIGN_QUEUES, CAMPAIGNS_LOCK
+        with CAMPAIGNS_LOCK:
+            for q in list(ACTIVE_CAMPAIGN_QUEUES.values()):
+                if hasattr(q, "close"):
+                    q.close()
+    except Exception:
+        pass
+
+
 def create_api_server(
     host: str = DEFAULT_API_HOST,
     port: int = DEFAULT_API_PORT,
@@ -411,10 +454,14 @@ def create_api_server(
 ) -> ThreadingHTTPServer:
     """
     Instantiates multi-threaded HTTP server for SLOKern control plane.
+    Sets daemon_threads = True so worker threads do not prevent clean exit on shutdown.
     """
     handler = SlokernHTTPRequestHandler
     handler.artifacts_root = artifacts_root
-    return ThreadingHTTPServer((host, port), handler)
+    server = ThreadingHTTPServer((host, port), handler)
+    server.daemon_threads = True
+    setattr(server, "is_shutting_down", False)
+    return server
 
 
 def run_server(
@@ -433,7 +480,17 @@ def run_server(
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down SLOKern API server.")
-        server.shutdown()
+    finally:
+        setattr(server, "is_shutting_down", True)
+        close_all_active_queues()
+        try:
+            server.shutdown()
+        except Exception:
+            pass
+        try:
+            server.server_close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

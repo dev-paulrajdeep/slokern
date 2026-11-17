@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { TradeoffPlot } from '../components/charts/TradeoffPlot';
+import { ParameterMatrixDiagram } from '../components/diagrams/ParameterMatrixDiagram';
+import { SegmentedControl } from '../components/common/SegmentedControl';
 import { Badge } from '../components/common/Badge';
 import { ReasonBox } from '../components/common/ReasonBox';
 import { DemoDataChip } from '../components/common/DemoDataChip';
@@ -27,6 +29,7 @@ export const TuningLabView: React.FC<TuningLabViewProps> = ({
   onOpenCampaignDrawer,
 }) => {
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [topologyView, setTopologyView] = useState<'matrix' | 'tradeoff' | 'both'>('both');
 
   const { paretoIds } = React.useMemo(() => identifyParetoFrontier(candidates), [candidates]);
   const selectedCandidate = candidates.find((c) => c.id === selectedCandidateId) || candidates.find((c) => c.feasible) || candidates[0];
@@ -90,15 +93,45 @@ export const TuningLabView: React.FC<TuningLabViewProps> = ({
 
       {/* Master-Detail Layout */}
       <div className="tuning-lab-grid">
-        {/* Left Master Pane: TradeoffPlot + Candidate List */}
+        {/* Left Master Pane: Topology View Selector + Diagram/Plot + Candidate List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* 2D Tradeoff Plot */}
-          <TradeoffPlot
-            candidates={candidates}
-            selectedCandidateId={selectedCandidate.id}
-          baselineCandidateId={baselineCandidate.id}
-            onSelectCandidate={onSelectCandidate}
-          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 650, color: 'var(--text-secondary, #A0AAA0)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Search Topology & Tradeoff Frontier
+            </span>
+            <SegmentedControl
+              size="sm"
+              value={topologyView}
+              onChange={setTopologyView}
+              options={[
+                { value: 'matrix', label: '2×2 Matrix' },
+                { value: 'tradeoff', label: '2D Tradeoff' },
+                { value: 'both', label: 'Split View' },
+              ]}
+            />
+          </div>
+
+          {(topologyView === 'matrix' || topologyView === 'both') && (
+            <div style={{ backgroundColor: 'var(--surface, #0E120F)', border: '1px solid var(--border, #263124)', borderRadius: '6px', padding: '12px' }}>
+              <ParameterMatrixDiagram
+                candidates={candidates}
+                selectedCandidateId={selectedCandidate.id}
+                onSelectCandidate={(id) => {
+                  const found = candidates.find((c) => c.id === id);
+                  if (found) onSelectCandidate(found);
+                }}
+              />
+            </div>
+          )}
+
+          {(topologyView === 'tradeoff' || topologyView === 'both') && (
+            <TradeoffPlot
+              candidates={candidates}
+              selectedCandidateId={selectedCandidate.id}
+              baselineCandidateId={baselineCandidate.id}
+              onSelectCandidate={onSelectCandidate}
+            />
+          )}
 
           {/* Candidate Matrix List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -237,6 +270,156 @@ export const TuningLabView: React.FC<TuningLabViewProps> = ({
             detailText={selectedCandidate.reason}
             isPassing={selectedCandidate.feasible}
           />
+
+          {/* Head-to-Head Comparison Card vs Baseline */}
+          <div
+            className="triage-card"
+            style={{
+              backgroundColor: 'var(--raised, #151B15)',
+              border: '1px solid var(--border-strong, #384635)',
+              borderRadius: '6px',
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary, #A0AAA0)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Head-to-Head vs Baseline ({baselineCandidate.id})
+              </span>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+                {selectedCandidate.id === baselineCandidate.id ? 'Baseline Active' : 'Comparative Delta'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
+              {/* Output Throughput */}
+              <div style={{ padding: '8px', backgroundColor: 'var(--surface, #0E120F)', borderRadius: '4px', border: '1px solid var(--border, #263124)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)', marginBottom: '4px' }}>THROUGHPUT</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span className="tabular-nums" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)', fontFamily: 'var(--font-mono, monospace)' }}>
+                    {formatNumber(selectedCandidate.throughput, 1)}
+                  </span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted, #727D73)' }}>tok/s</span>
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '11px', fontFamily: 'var(--font-mono, monospace)' }}>
+                  {selectedCandidate.throughput != null && baselineCandidate.throughput != null ? (
+                    (() => {
+                      const delta = selectedCandidate.throughput - baselineCandidate.throughput;
+                      const pct = baselineCandidate.throughput > 0 ? (delta / baselineCandidate.throughput) * 100 : 0;
+                      const isPos = delta >= 0;
+                      return (
+                        <span className="tabular-nums" style={{ fontWeight: 650, color: isPos ? 'var(--primary-bright, #95D500)' : 'var(--error, #FF5555)' }}>
+                          {isPos ? `+${formatNumber(pct, 1)}%` : `${formatNumber(pct, 1)}%`}
+                        </span>
+                      );
+                    })()
+                  ) : '—'}
+                </div>
+              </div>
+
+              {/* TTFT P95 */}
+              <div style={{ padding: '8px', backgroundColor: 'var(--surface, #0E120F)', borderRadius: '4px', border: '1px solid var(--border, #263124)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)', marginBottom: '4px' }}>TTFT (P95)</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)', fontFamily: 'var(--font-mono, monospace)' }}>
+                  <span className="tabular-nums">{formatLatency(selectedCandidate.ttftP95)}</span>
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '11px', fontFamily: 'var(--font-mono, monospace)' }}>
+                  {selectedCandidate.ttftP95 != null && baselineCandidate.ttftP95 != null ? (
+                    (() => {
+                      const delta = selectedCandidate.ttftP95 - baselineCandidate.ttftP95;
+                      const pct = baselineCandidate.ttftP95 > 0 ? (delta / baselineCandidate.ttftP95) * 100 : 0;
+                      const isImprovement = delta <= 0;
+                      return (
+                        <span className="tabular-nums" style={{ fontWeight: 650, color: isImprovement ? 'var(--primary-bright, #95D500)' : 'var(--error, #FF5555)' }}>
+                          {delta > 0 ? `+${formatNumber(pct, 1)}%` : `${formatNumber(pct, 1)}%`}
+                        </span>
+                      );
+                    })()
+                  ) : '—'}
+                </div>
+              </div>
+
+              {/* ITL P95 */}
+              <div style={{ padding: '8px', backgroundColor: 'var(--surface, #0E120F)', borderRadius: '4px', border: '1px solid var(--border, #263124)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)', marginBottom: '4px' }}>ITL (P95)</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)', fontFamily: 'var(--font-mono, monospace)' }}>
+                  <span className="tabular-nums">{formatLatency(selectedCandidate.itlP95)}</span>
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '11px', fontFamily: 'var(--font-mono, monospace)' }}>
+                  {selectedCandidate.itlP95 != null && baselineCandidate.itlP95 != null ? (
+                    (() => {
+                      const delta = selectedCandidate.itlP95 - baselineCandidate.itlP95;
+                      const pct = baselineCandidate.itlP95 > 0 ? (delta / baselineCandidate.itlP95) * 100 : 0;
+                      const isImprovement = delta <= 0;
+                      return (
+                        <span className="tabular-nums" style={{ fontWeight: 650, color: isImprovement ? 'var(--primary-bright, #95D500)' : 'var(--error, #FF5555)' }}>
+                          {delta > 0 ? `+${formatNumber(pct, 1)}%` : `${formatNumber(pct, 1)}%`}
+                        </span>
+                      );
+                    })()
+                  ) : '—'}
+                </div>
+              </div>
+
+              {/* Error Rate */}
+              <div style={{ padding: '8px', backgroundColor: 'var(--surface, #0E120F)', borderRadius: '4px', border: '1px solid var(--border, #263124)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)', marginBottom: '4px' }}>ERROR RATE</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)', fontFamily: 'var(--font-mono, monospace)' }}>
+                  <span className="tabular-nums">{formatNumber(selectedCandidate.error, 2)}%</span>
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: selectedCandidate.error === 0 ? 'var(--primary-bright, #95D500)' : 'var(--error, #FF5555)' }}>
+                  {selectedCandidate.error === 0 ? '0.0% (Clean)' : `+${formatNumber(selectedCandidate.error, 2)}%`}
+                </div>
+              </div>
+            </div>
+
+            {/* Binding Constraint Warning / Headroom Banner */}
+            {!selectedCandidate.feasible ? (
+              <div
+                style={{
+                  padding: '10px 12px',
+                  backgroundColor: 'rgba(255, 85, 85, 0.08)',
+                  border: '1px solid rgba(255, 85, 85, 0.4)',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                }}
+              >
+                <span style={{ color: 'var(--error, #FF5555)', fontSize: '14px', lineHeight: 1 }}>⚠</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--error, #FF5555)', fontFamily: 'var(--font-mono, monospace)', textTransform: 'uppercase' }}>
+                    Binding Constraint Breach: {selectedCandidate.reasonCodes?.[0] || 'SLO Threshold Exceeded'}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary, #A0AAA0)', lineHeight: 1.4 }}>
+                    {selectedCandidate.reason || 'Candidate breached hard latency or error constraint under declared workload.'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderLeft: '2px solid var(--primary, #76B900)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span style={{ color: 'var(--primary-bright, #95D500)', fontSize: '13px', lineHeight: 1 }}>✓</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--primary-bright, #95D500)', fontFamily: 'var(--font-mono, monospace)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    All Hard Constraints Satisfied
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)', lineHeight: 1.4 }}>
+                    {selectedCandidate.reason || 'Feasible across all declared service-level objectives.'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Parameter Settings */}
           <div>

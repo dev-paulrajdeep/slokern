@@ -16,10 +16,10 @@
   --raised: #151B15;
   --elevated: #1D251E;
   --hover: #1F281E;
-  --border: #334230;
+  /* Reconciled with tokens.css: --border: #263124 */
   --border-subtle: #242E22;
-  --border-strong: #455740;
-  --border-focus: #76B900;
+  /* Reconciled with tokens.css: --border-strong: #384635 */
+  /* Reconciled with tokens.css: --border-focus: #95D500 */
 
   /* Typography Colors */
   --text: #F0F3EF;
@@ -42,7 +42,7 @@
   --error: #FF5555;
   --coral: var(--error);
   --destructive: #960200;
-  --info: #394053;
+  /* Reconciled with tokens.css: --info: #8F9AA5, --info-border: #394053 */
 
   /* Geometry & Radius */
   --radius-xs: 3px;
@@ -844,7 +844,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(1px) scale(0.99);
+  transform: scale(var(--scale-active, 0.98));
+  transition: transform var(--duration-press, 70ms) ease-out;
 }
 
 .btn-primary {

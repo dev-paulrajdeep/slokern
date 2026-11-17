@@ -6,9 +6,11 @@
   --elevated: #1D251E;
   --hover: #1F281E;
 
-  /* Borders */
+  /* Borders & Focus */
   --border: #263124;
   --border-strong: #384635;
+  --border-focus: #95D500;
+  --focus: #95D500;
 
   /* Text & Typography */
   --text-primary: #F0F3EF;
@@ -24,14 +26,26 @@
   --info: #8F9AA5;
   --info-border: #394053;
 
-  /* Glass Layers */
+  /* Glass Layers - Specular Rim & Atmospheric Refraction */
   --glass-chrome: rgba(14, 18, 15, 0.72);
   --glass-float: rgba(29, 37, 30, 0.78);
   --glass-hairline: rgba(240, 243, 239, 0.08);
+  --glass-highlight: rgba(240, 243, 239, 0.05);
+  --glass-scrim: rgba(8, 10, 9, 0.62);
+  --glass-blur-chrome: blur(28px) saturate(150%);
+  --glass-blur-float: blur(20px) saturate(140%);
 
-  /* Fonts - Apple Pro Workstation Stack */
+  /* Fonts - Apple Pro Workstation Stack (DM Mono first for cross-platform tabular pitch) */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
-  --font-mono: 'SF Mono', 'DM Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  --font-mono: 'DM Mono', 'SF Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  --font-display: 'Inter Display', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Shell Layout Dimensions */
+  --context-bar-height: 44px;
+  --status-bar-height: 28px;
+  --sidebar-width: 244px;
+  --drawer-width: 420px;
 
   /* Typography Scale (Strict 11px floor) */
   --text-stage: clamp(56px, 11vw, 136px);
@@ -62,9 +76,13 @@
   --space-8: calc(32px * var(--p-density, 1));
   --space-10: calc(40px * var(--p-density, 1));
 
-  /* Transitions */
+  /* Transitions & Motion - Calibrated Apple Spring Curves */
+  --ease-spring-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring-ui: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-press: 70ms;
+  --scale-active: 0.98;
   --duration-fast: 140ms;
   --duration-normal: 220ms;
   --duration-reveal: 1400ms;
@@ -83,6 +101,10 @@
 :focus-visible {
   outline: 2px solid var(--primary-bright, #95D500);
   outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 @media (forced-colors: active) {
@@ -111,9 +133,35 @@
 }
 
 /* Tabular number utility */
-.tabular-nums {
+.tabular-nums,
+.num,
+[data-tabular],
+.metric-value,
+.telemetry,
+time {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
+}
+
+/* ==========================================================================
+   Glass Layer Utilities with Highlight Inset
+   ========================================================================== */
+
+.glass-chrome {
+  background: var(--glass-chrome);
+  -webkit-backdrop-filter: var(--glass-blur-chrome);
+  backdrop-filter: var(--glass-blur-chrome);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+.glass-float {
+  background: var(--glass-float);
+  -webkit-backdrop-filter: var(--glass-blur-float);
+  backdrop-filter: var(--glass-blur-float);
+  border: 1px solid var(--glass-hairline);
+  box-shadow: inset 0 1px 0 var(--glass-highlight),
+              0 12px 32px rgba(0, 0, 0, 0.45),
+              0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 /* Typography Hierarchy & Polish */
@@ -188,11 +236,22 @@ input, textarea, select {
    Motion System: Tactile Feedback, Spatial Continuity & Focal Reveals
    ========================================================================== */
 
-/* Tactile Click Feedback */
-button:active,
-.btn-press:active {
-  transform: scale(0.98);
-  transition: transform 70ms ease-out;
+/* Tactile Micro-Press Enhancement (Guarded against disabled state) */
+button:not(:disabled):not([disabled]):not([aria-disabled="true"]),
+.btn-press:not(:disabled):not([disabled]):not([aria-disabled="true"]),
+[role="button"]:not(:disabled):not([disabled]):not([aria-disabled="true"]) {
+  transition: transform 140ms var(--ease-spring-snappy),
+              background-color var(--duration-fast, 140ms) ease,
+              border-color var(--duration-fast, 140ms) ease,
+              color var(--duration-fast, 140ms) ease,
+              box-shadow var(--duration-fast, 140ms) ease;
+}
+
+button:active:not(:disabled):not([disabled]):not([aria-disabled="true"]),
+.btn-press:active:not(:disabled):not([disabled]):not([aria-disabled="true"]),
+[role="button"]:active:not(:disabled):not([disabled]):not([aria-disabled="true"]) {
+  transform: scale(var(--scale-active, 0.98));
+  transition: transform var(--duration-press, 70ms) ease-out;
 }
 
 /* Workspace View Entry Transition */
@@ -213,11 +272,19 @@ button:active,
 
 /* Slide-Over Drawer Spatial Slide */
 .slide-over-backdrop {
-  animation: backdrop-enter 200ms ease-out forwards;
+  animation: backdrop-enter 220ms var(--ease-spring-snappy) forwards;
+}
+
+.slide-over-backdrop.exiting {
+  animation: backdrop-exit 180ms ease-in forwards;
 }
 
 .slide-over-panel {
-  animation: drawer-enter 240ms var(--ease-out-expo) forwards;
+  animation: drawer-enter 240ms var(--ease-spring-snappy) forwards;
+}
+
+.slide-over-panel.exiting {
+  animation: drawer-exit 200ms var(--ease-spring-snappy) forwards;
 }
 
 @keyframes backdrop-enter {
@@ -229,6 +296,15 @@ button:active,
   }
 }
 
+@keyframes backdrop-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 @keyframes drawer-enter {
   from {
     transform: translateX(100%);
@@ -236,6 +312,37 @@ button:active,
   to {
     transform: translateX(0);
   }
+}
+
+@keyframes drawer-exit {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0.8;
+  }
+}
+
+/* Live Ping Heartbeat & Beacon Pulse */
+@keyframes ping-heartbeat {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(118, 185, 0, 0.65);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 5px rgba(118, 185, 0, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(118, 185, 0, 0);
+  }
+}
+
+.ping-heartbeat {
+  animation: ping-heartbeat 2.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 
 /* Verified-Winner Reveal Sequence Keyframes (Section 7) */
@@ -701,6 +808,78 @@ button:active,
   }
 }
 
+/* ==========================================================================
+   Apple-Grade Range Sliders & Precision Form Controls
+   ========================================================================== */
+
+.apple-range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #F0F3EF;
+  border: 2px solid var(--primary-bright, #95D500);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6), 0 0 8px rgba(149, 213, 0, 0.4);
+  cursor: pointer;
+  transition: transform 120ms var(--ease-spring-snappy), box-shadow 120ms ease;
+}
+
+.apple-range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 12px rgba(149, 213, 0, 0.65);
+}
+
+.apple-range-slider:active::-webkit-slider-thumb {
+  transform: scale(1.22);
+  box-shadow: 0 0 16px rgba(149, 213, 0, 0.85);
+}
+
+.apple-range-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #F0F3EF;
+  border: 2px solid var(--primary-bright, #95D500);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6), 0 0 8px rgba(149, 213, 0, 0.4);
+  cursor: pointer;
+  transition: transform 120ms var(--ease-spring-snappy), box-shadow 120ms ease;
+}
+
+.apple-range-slider::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 12px rgba(149, 213, 0, 0.65);
+}
+
+.apple-range-slider:active::-moz-range-thumb {
+  transform: scale(1.22);
+  box-shadow: 0 0 16px rgba(149, 213, 0, 0.85);
+}
+
+/* ==========================================================================
+   Telemetry Experiments Table Illumination & Row States
+   ========================================================================== */
+
+.experiment-table-row {
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+  outline: none;
+}
+
+.experiment-table-row:hover {
+  background-color: rgba(240, 243, 239, 0.04) !important;
+  box-shadow: inset 2px 0 0 var(--border-strong, #384635);
+}
+
+.experiment-table-row.active-scrubber-row {
+  background-color: rgba(118, 185, 0, 0.08) !important;
+  box-shadow: inset 3px 0 0 var(--primary-bright, #95D500);
+}
+
+.experiment-table-row:focus-visible {
+  outline: 2px solid var(--primary-bright, #95D500);
+  outline-offset: -2px;
+}
+
 /* Prefers Reduced Motion Safety */
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*),
@@ -712,6 +891,7 @@ button:active,
   .workspace-enter,
   .slide-over-backdrop,
   .slide-over-panel,
+  .ping-heartbeat,
   .verified-reveal-container,
   .verified-reveal-container.revealing .stage-meta-bar,
   .verified-reveal-container.revealing .stage-numeral,
@@ -722,7 +902,8 @@ button:active,
   }
 
   button:active,
-  .btn-press:active {
+  .btn-press:active,
+  [role="button"]:active {
     transform: none !important;
   }
 }

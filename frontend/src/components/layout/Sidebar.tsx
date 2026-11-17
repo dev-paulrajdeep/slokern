@@ -1,4 +1,5 @@
 import React from 'react';
+import slokernLogo from '../../assets/slokern_logo.png';
 
 export type WorkspaceDestination =
   | 'Overview'
@@ -106,35 +107,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        width: collapsed ? '66px' : '244px',
+        width: collapsed ? '66px' : 'var(--sidebar-width, 244px)',
         backgroundColor: 'var(--glass-chrome, rgba(14, 18, 15, 0.72))',
-        backdropFilter: 'blur(16px)',
+        backdropFilter: 'var(--glass-blur-chrome, blur(28px) saturate(150%))',
+        WebkitBackdropFilter: 'var(--glass-blur-chrome, blur(28px) saturate(150%))',
         borderRight: '1px solid var(--border, #263124)',
         userSelect: 'none',
         flexShrink: 0,
         height: '100%',
         boxSizing: 'border-box',
-        transition: 'width 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+        overflowX: 'hidden',
+        willChange: 'width',
+        transition: 'width 200ms var(--ease-spring-snappy, cubic-bezier(0.16, 1, 0.3, 1))',
       }}
       role="navigation"
       aria-label="Main Navigation"
     >
-      <div style={{ padding: collapsed ? '16px 8px 8px' : '16px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        {!collapsed && (
-          <div
+      {/* Brand Header */}
+      <div
+        style={{
+          padding: collapsed ? '14px 8px 12px' : '14px 14px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          borderBottom: '1px solid var(--border, #263124)',
+          marginBottom: '8px',
+          gap: '8px',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+          <img
+            src={slokernLogo}
+            alt="SLOKern Logo"
             style={{
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono, monospace)',
-              fontWeight: 600,
-              letterSpacing: '0.08em',
-              color: 'var(--text-muted, #727D73)',
-              textTransform: 'uppercase',
-              paddingLeft: '8px',
+              width: '22px',
+              height: '22px',
+              borderRadius: '4px',
+              objectFit: 'contain',
+              flexShrink: 0,
+              filter: 'drop-shadow(0 0 6px rgba(118, 185, 0, 0.35))',
             }}
-          >
-            Workspaces
-          </div>
-        )}
+          />
+          {!collapsed && (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  fontFamily: 'var(--font-mono, monospace)',
+                  letterSpacing: '0.06em',
+                  color: 'var(--text-primary, #F0F3EF)',
+                  lineHeight: 1.1,
+                }}
+              >
+                SLOKERN
+              </span>
+              <span
+                style={{
+                  fontSize: 'var(--text-micro, 11px)',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  color: 'var(--text-muted, #727D73)',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                CONTROL PLANE
+              </span>
+            </div>
+          )}
+        </div>
+
         {onToggleCollapse && (
           <button
             type="button"
@@ -151,7 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              margin: collapsed ? '0 auto 8px' : '0 0 8px',
+              flexShrink: 0,
             }}
           >
             <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -165,7 +207,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: '3px', padding: '0 8px', flex: 1 }}>
+      {/* Section Header */}
+      {!collapsed && (
+        <div
+          style={{
+            fontSize: '11px',
+            fontFamily: 'var(--font-mono, monospace)',
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            color: 'var(--text-muted, #727D73)',
+            textTransform: 'uppercase',
+            padding: '4px 16px 6px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Workspaces
+        </div>
+      )}
+
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: '3px', padding: '0 8px', flex: 1, overflowX: 'hidden' }}>
         {NAV_ITEMS.map((item) => {
           const isActive = currentWorkspace === item.key;
           return (
@@ -185,16 +245,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 borderRadius: '5px',
                 border: '1px solid',
                 borderColor: isActive ? 'var(--border-strong, #384635)' : 'transparent',
-                backgroundColor: isActive ? 'var(--raised, #151B15)' : 'transparent',
+                backgroundColor: isActive ? 'rgba(149, 213, 0, 0.08)' : 'transparent',
+                boxShadow: isActive ? 'inset 0 1px 0 var(--glass-highlight, rgba(240, 243, 239, 0.05)), 0 0 12px rgba(118, 185, 0, 0.06)' : 'none',
                 color: isActive ? 'var(--text-primary, #F0F3EF)' : 'var(--text-secondary, #A0AAA0)',
                 cursor: 'pointer',
                 textAlign: 'left',
                 position: 'relative',
-                transition: 'background-color 140ms ease, color 140ms ease',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                transition: 'background-color 140ms ease, color 140ms ease, border-color 140ms ease',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', color: isActive ? 'var(--primary, #76B900)' : 'inherit' }}>
+              {/* Neon Vertical Bar on Active Item */}
+              {isActive && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: '4px',
+                    bottom: '4px',
+                    width: '2px',
+                    backgroundColor: 'var(--primary-bright, #95D500)',
+                    borderRadius: '2px',
+                    boxShadow: '0 0 8px rgba(149, 213, 0, 0.6)',
+                  }}
+                />
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', color: isActive ? 'var(--primary-bright, #95D500)' : 'inherit', flexShrink: 0 }}>
                   {item.icon(17)}
                 </span>
                 {!collapsed && (
@@ -203,6 +283,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       fontSize: '13px',
                       fontWeight: isActive ? 600 : 450,
                       letterSpacing: '-0.01em',
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     {item.label}
@@ -211,18 +292,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
 
               {!collapsed ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {isActive && (
-                    <span
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--primary, #76B900)',
-                      }}
-                      aria-hidden="true"
-                    />
-                  )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                   <kbd className="keycap-badge" style={{ color: isActive ? 'var(--primary-bright, #95D500)' : 'var(--text-secondary, #A0AAA0)' }}>
                     {item.hotkey}
                   </kbd>
@@ -255,7 +325,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           fontSize: '11px',
           fontFamily: 'var(--font-mono, monospace)',
           color: 'var(--text-muted, #727D73)',
-          display: collapsed ? 'none' : 'block',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          opacity: collapsed ? 0 : 1,
+          height: collapsed ? '0px' : 'auto',
+          paddingTop: collapsed ? '0px' : '12px',
+          paddingBottom: collapsed ? '0px' : '12px',
+          transition: 'opacity 150ms ease, height 200ms ease, padding 200ms ease',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

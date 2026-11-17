@@ -9,6 +9,7 @@ interface StatusBarProps {
   healthStatus?: 'ok' | 'degraded' | 'error';
   healthPingMs?: number;
   activeRunId?: string;
+  throughput?: string | number;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
@@ -17,6 +18,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   healthStatus = 'ok',
   healthPingMs = 14,
   activeRunId = 'run_01HZX8F2',
+  throughput,
 }) => {
   const getHealthColor = () => {
     switch (healthStatus) {
@@ -39,13 +41,17 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         justifyContent: 'space-between',
         height: '32px',
         padding: '0 16px',
-        backgroundColor: 'var(--surface, #0E120F)',
+        backgroundColor: 'var(--glass-chrome, rgba(14, 18, 15, 0.72))',
+        backdropFilter: 'var(--glass-blur-chrome, blur(28px) saturate(150%))',
+        WebkitBackdropFilter: 'var(--glass-blur-chrome, blur(28px) saturate(150%))',
         borderTop: '1px solid var(--border, #263124)',
+        boxShadow: 'inset 0 1px 0 var(--glass-highlight, rgba(240, 243, 239, 0.05))',
         fontSize: '11px',
         fontFamily: 'var(--font-mono, monospace)',
         color: 'var(--text-secondary, #A0AAA0)',
         zIndex: 40,
         userSelect: 'none',
+        whiteSpace: 'nowrap',
       }}
       role="contentinfo"
     >
@@ -81,24 +87,97 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ color: 'var(--text-muted, #727D73)' }}>active_run:</span>
-          <span style={{ color: 'var(--text-primary, #F0F3EF)', fontWeight: 600 }}>{activeRunId}</span>
+          <span
+            className="tabular-nums num"
+            style={{
+              color: 'var(--text-primary, #F0F3EF)',
+              fontWeight: 600,
+              fontVariantNumeric: 'tabular-nums',
+              fontFeatureSettings: "'tnum' 1",
+            }}
+          >
+            {activeRunId}
+          </span>
         </div>
+
+        {throughput != null && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: 'var(--text-muted, #727D73)' }}>throughput:</span>
+            <span
+              className="tabular-nums num"
+              style={{
+                color: 'var(--text-primary, #F0F3EF)',
+                fontWeight: 600,
+                fontVariantNumeric: 'tabular-nums',
+                fontFeatureSettings: "'tnum' 1",
+              }}
+            >
+              {typeof throughput === 'number' ? `${throughput.toFixed(1)} req/s` : throughput}
+            </span>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span
-            style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: getHealthColor(),
-              display: 'inline-block',
-            }}
-            aria-hidden="true"
-          />
-          <span style={{ textTransform: 'uppercase' }}>control-plane: {healthStatus}</span>
-          <span style={{ color: 'var(--text-muted, #727D73)' }}>({healthPingMs}ms)</span>
+        <div
+          className="status-ping-pill"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '2px 8px',
+            backgroundColor: 'var(--raised, #151B15)',
+            border: '1px solid var(--border, #263124)',
+            borderRadius: '12px',
+            boxShadow: 'inset 0 1px 0 var(--glass-highlight, rgba(240, 243, 239, 0.05))',
+          }}
+        >
+          {/* Dual-layer Heartbeat Pulse */}
+          <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '8px', height: '8px' }}>
+            {healthStatus === 'ok' && (
+              <span
+                className="ping-heartbeat"
+                style={{
+                  position: 'absolute',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: getHealthColor(),
+                  opacity: 0.5,
+                }}
+                aria-hidden="true"
+              />
+            )}
+            <span
+              style={{
+                position: 'relative',
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: getHealthColor(),
+                boxShadow: `0 0 6px ${getHealthColor()}`,
+              }}
+              aria-hidden="true"
+            />
+          </span>
+
+          <span style={{ textTransform: 'uppercase', fontWeight: 600 }}>control-plane: {healthStatus}</span>
+          <span style={{ color: 'var(--text-muted, #727D73)' }}>
+            (
+            <span
+              className="tabular-nums num"
+              style={{
+                fontVariantNumeric: 'tabular-nums',
+                fontFeatureSettings: "'tnum' 1",
+                display: 'inline-block',
+                minWidth: '22px',
+                textAlign: 'right',
+              }}
+            >
+              {healthPingMs}
+            </span>
+            ms)
+          </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted, #727D73)' }}>

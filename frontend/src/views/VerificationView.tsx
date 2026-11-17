@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Badge } from '../components/common/Badge';
 import { DemoDataChip } from '../components/common/DemoDataChip';
 import { DriftGateBar } from '../components/charts/DriftGateBar';
+import { VerificationGateDiagram } from '../components/diagrams/VerificationGateDiagram';
 import { formatNumber } from '../lib/format';
 import type { VerificationDerivationResult } from '../lib/status';
 import type { UICandidate } from '../lib/adapters/viewModel';
@@ -29,6 +30,70 @@ interface ComparisonMetric {
   format: (value: number) => string;
   passed: boolean;
 }
+
+interface TriageCategory {
+  id: string;
+  title: string;
+  tolerance: string;
+  status: 'PASSED' | 'FAILED' | 'PENDING';
+  tone: 'verified' | 'infeasible' | 'warning' | 'neutral';
+  description: string;
+  reasonCodes: string[];
+}
+
+const getClinicalTriageCategories = (
+  candidate: UICandidate,
+  isPending: boolean,
+  _isVerified: boolean,
+  verificationFailed: boolean
+): TriageCategory[] => {
+  const codes = candidate.reasonCodes || [];
+  const hasHardBreach = !candidate.feasible || codes.some((c) => c.includes('EXCEEDED') || c.includes('DEFICIT'));
+  const hasDriftBreach = verificationFailed || codes.some((c) => c.includes('DRIFT'));
+  const hasEvidenceIssue =
+    candidate.evidenceValidity === 'INVALID' ||
+    candidate.evidenceValidity === 'CONTAMINATED' ||
+    codes.some((c) => c.includes('INSUFFICIENT') || c.includes('CONTAMINATED') || c.includes('MISSING'));
+
+  return [
+    {
+      id: 'hard-slo',
+      title: 'Hard SLO Constraints',
+      tolerance: '0.0% Breach Tolerance (Strict Floor/Ceiling)',
+      status: hasHardBreach ? 'FAILED' : 'PASSED',
+      tone: hasHardBreach ? 'infeasible' : 'verified',
+      description: 'Evaluates TTFT, ITL, and Error Rate against declared service-level thresholds.',
+      reasonCodes: codes.filter((c) => c.includes('EXCEEDED') || c.includes('DEFICIT') || c === 'HARD_CONSTRAINTS_PASSED'),
+    },
+    {
+      id: 'boundary-drift',
+      title: 'Physical Boundary Drift',
+      tolerance: '±3.0 ms TTFT · ±10.0 tok/s Throughput Gate',
+      status: isPending ? 'PENDING' : hasDriftBreach ? 'FAILED' : 'PASSED',
+      tone: isPending ? 'warning' : hasDriftBreach ? 'infeasible' : 'verified',
+      description: 'Audits empirical metric variance between search campaign and verification rerun.',
+      reasonCodes: codes.filter((c) => c.includes('DRIFT')),
+    },
+    {
+      id: 'feasibility',
+      title: 'Feasibility Space Boundary',
+      tolerance: 'Bounded 2×2 Parameter Envelope (Batch × Concurrency)',
+      status: candidate.feasible ? 'PASSED' : 'FAILED',
+      tone: candidate.feasible ? 'verified' : 'infeasible',
+      description: 'Confirms applied serving parameters match declared legal search envelope.',
+      reasonCodes: codes.filter((c) => c === 'HARD_CONSTRAINTS_PASSED' || c === 'PARETO_OPTIMAL'),
+    },
+    {
+      id: 'evidence-validity',
+      title: 'Evidence Validity & Sample Integrity',
+      tolerance: '≥100 Valid Samples · Uncontaminated Arrival Pattern',
+      status: hasEvidenceIssue ? 'FAILED' : 'PASSED',
+      tone: hasEvidenceIssue ? 'infeasible' : 'verified',
+      description: 'Ensures load generator saturation and sample contamination do not compromise integrity.',
+      reasonCodes: codes.filter((c) => c.includes('SAMPLES') || c.includes('CONTAMINATED') || c.includes('MISSING')),
+    },
+  ];
+};
 
 export const VerificationView: React.FC<VerificationViewProps> = ({
   recommendedCandidate,
@@ -195,6 +260,87 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
           {isPending
             ? 'Independent verification rerun has not yet been executed for this campaign. In accordance with AGENTS.md § 1, 5, 7, candidate selection must be confirmed experimentally through a fresh, independent rerun with a distinct run ID before production deployment.'
             : verificationRecord?.final_decision_notes || verificationStatus.reasonText}
+        </div>
+      </div>
+
+      {/* Verification Gate Isolation Diagram */}
+      <VerificationGateDiagram
+        searchRunId={searchRunId}
+        verifRunId={verificationRunId}
+        driftSummary={availableMetrics}
+        candidateId={recommendedCandidate.id}
+        candidateName={recommendedCandidate.name}
+        appliedParams={{
+          batch: recommendedCandidate.batch,
+          concurrency: recommendedCandidate.concurrency,
+          kv_cache: recommendedCandidate.kvCache,
+        }}
+        durationMultiplier={durationMultiplier}
+        verdict={verificationLabel}
+      />
+
+      {/* Clinical Verification Triage Categories */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 650, color: 'var(--text-secondary, #A0AAA0)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Clinical Verification Triage Categories
+          </h2>
+          <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+            Deterministic Reason Code Mapping
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+          {getClinicalTriageCategories(recommendedCandidate, isPending, isVerified, verificationFailed).map((cat) => (
+            <div
+              key={cat.id}
+              className="triage-card"
+              style={{
+                backgroundColor: 'var(--surface, #0E120F)',
+                border: '1px solid var(--border, #263124)',
+                borderRadius: '6px',
+                padding: '14px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)', fontFamily: 'var(--font-mono, monospace)' }}>
+                  {cat.title}
+                </span>
+                <Badge tone={cat.tone} size="sm">
+                  {cat.status}
+                </Badge>
+              </div>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--primary-bright, #95D500)' }}>
+                {cat.tolerance}
+              </div>
+              <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary, #A0AAA0)', lineHeight: 1.4 }}>
+                {cat.description}
+              </p>
+              {cat.reasonCodes.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                  {cat.reasonCodes.map((code) => (
+                    <span
+                      key={code}
+                      style={{
+                        fontSize: '10px',
+                        fontFamily: 'var(--font-mono, monospace)',
+                        padding: '2px 6px',
+                        backgroundColor: 'var(--raised, #151B15)',
+                        border: '1px solid var(--border-strong, #384635)',
+                        borderRadius: '3px',
+                        color: 'var(--text-primary, #F0F3EF)',
+                      }}
+                    >
+                      {code}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 ---
 name: SLOKern
-version: "2.1"
-description: Obsidian Black × NVIDIA Green — a precision instrument with an Apple-grade finish
+version: "2.2"
+description: Obsidian Black × NVIDIA Green — Apple Pro Workstation ergonomics, calibrated tactile motion, and verifiable decision architecture
 colors:
   canvas: "#080A09"
   surface: "#0E120F"
@@ -117,9 +117,13 @@ motion:
   stage: "1400ms"
   ease-standard: "cubic-bezier(0.32, 0.72, 0, 1)"
   ease-exit: "cubic-bezier(0.4, 0, 1, 1)"
-  spring-snappy: "stiffness 520, damping 42, mass 1"
-  spring-ui: "stiffness 380, damping 34, mass 1"
-  spring-stage: "stiffness 140, damping 20, mass 1"
+  spring-snappy: "stiffness 520, damping 42, mass 1" # CSS: cubic-bezier(0.16, 1, 0.3, 1)
+  spring-ui: "stiffness 380, damping 34, mass 1"     # CSS: cubic-bezier(0.25, 1, 0.5, 1)
+  spring-stage: "stiffness 140, damping 20, mass 1"  # CSS: cubic-bezier(0.32, 0.72, 0, 1)
+  ease-spring-snappy: "cubic-bezier(0.16, 1, 0.3, 1)"
+  ease-spring-ui: "cubic-bezier(0.25, 1, 0.5, 1)"
+  duration-press: "70ms"
+  scale-active: "0.98"
 glass:
   chrome-blur: "blur(28px) saturate(150%)"
   float-blur: "blur(20px) saturate(140%)"
@@ -199,13 +203,13 @@ components:
     padding: "8px 12px"
 ---
 
-# Design System: SLOKern (v2.1)
+# Design System: SLOKern (v2.2)
 
 ## Overview
 
-**Creative North Star: "The Verified Instrument"**
+**Creative North Star: "The Verified Instrument" (Apple Pro Workstation Edition)**
 
-v1 described a cyberpunk command center. v2.1 keeps every piece of its rigor (the obsidian palette, the rationed green, tabular telemetry, provenance disclosure) and changes the *finish*: calm surfaces, generous space where it matters, glass only where something floats, and motion that feels physical rather than decorative. The Apple-grade quality is in the restraint, not in decoration.
+v1 described a cyberpunk command center. v2.1 introduced the dual-tier Stage and Inspector architecture. v2.2 elevates the platform to an **Apple Pro Workstation × Cyberpunk Command Center** standard: combining translucent Liquid Glass chrome, calibrated Apple spring easing curves (`cubic-bezier(0.16, 1, 0.3, 1)`), tactile micro-press haptics with disabled-state guards, strict cross-platform tabular numerals (`DM Mono` prioritized), and responsive SVG architectural schematics. Restraint, precision, and verifiability govern every pixel.
 
 The product is judged by two audiences at once: a judge who sees it for three minutes, and an engineer who lives in it for three hours. v2.1 serves both with a **two-tier system**. The **Stage** tier is airy, large, and cinematic, and it carries the first impression. The **Inspector** tier is dense, monospaced, and exact, and it carries the work. Both tiers share one palette, one grammar of state, and one rule: *nothing is shown as verified until it is verified.*
 
@@ -401,11 +405,29 @@ Badges are 22px high, `0 8px` padding, pill radius. Color is never the only sign
 ## Motion
 
 - **Data changes are instant (0ms).** Values, badges, and states change without animation. A number that animates between measurements is lying about when it was true.
-- **Spatial changes are springs, ≤ 220ms perceived.** Navigation, drawer, popovers, and the segmented-control thumb use `spring-ui` (stiffness 380, damping 34). Press feedback is `scale(0.98)` on `spring-snappy`.
-- **Stage motion is the only motion allowed to exceed 220ms.** One reveal per verified run.
+- **Spatial changes are springs, ≤ 220ms perceived.** Navigation, drawer, popovers, and the segmented-control thumb use `spring-ui` (stiffness 380, damping 34, CSS `--ease-spring-ui: cubic-bezier(0.25, 1, 0.5, 1)`). Press feedback is `scale(0.98)` on `spring-snappy` (stiffness 520, damping 42, CSS `--ease-spring-snappy: cubic-bezier(0.16, 1, 0.3, 1)`).
+- **Stage motion is the only motion allowed to exceed 220ms.** One reveal per verified run (`spring-stage`: stiffness 140, damping 20).
 - **Only animate `transform`, `opacity`, and `filter`.** Never layout properties.
 - **Charts** may draw their line once on first mount (≤ 360ms); updates are instant.
 - **`prefers-reduced-motion: reduce`:** replace every spring and the reveal with a 120ms opacity crossfade, with the final value shown immediately. No perpetual pulses, and nothing that implies live data when none is arriving.
+
+### Calibrated Motion Curves & Apple Spring Physics
+
+| Motion Token | Physics Equivalent | CSS Curve | Duration | Application |
+|---|---|---|---|---|
+| `--ease-spring-snappy` | stiffness 520, damping 42, mass 1 | `cubic-bezier(0.16, 1, 0.3, 1)` | 140ms | Tactile micro-press recovery, button clicks, HUD crosshair tracking |
+| `--ease-spring-ui` | stiffness 380, damping 34, mass 1 | `cubic-bezier(0.25, 1, 0.5, 1)` | 220ms | Slide-over drawer entrance, popovers, segmented thumb sliding |
+| `--ease-spring-stage` | stiffness 140, damping 20, mass 1 | `cubic-bezier(0.32, 0.72, 0, 1)` | 1400ms | Signature verified-winner reveal, hero numeral wheel entry |
+
+**The Tactile Feedback Rule.** Interactive buttons, keycaps, and clickable cards depress to `scale(0.98)` over 60–70ms (`--duration-press: 70ms`) on click/touch active, recovering in 140ms on `--ease-spring-snappy`. Active depression is **strictly suppressed** on `:disabled` and `[aria-disabled="true"]` elements (`button:active:not(:disabled):not([aria-disabled="true"])`). Disabled controls must feel inert under touch.
+
+### Apple Pro Workstation Ergonomics
+
+The SLOKern interface implements an ergonomic hierarchy derived from Apple macOS Pro applications:
+1. **Liquid Glass Functional Layer:** Translucent chrome (`--glass-chrome: rgba(14, 18, 15, 0.72)` with `backdrop-filter: blur(28px) saturate(150%)`) on sidebar navigation and scroll-edge toolbars. Topped with a crisp 1px specular highlight rim (`--glass-highlight: rgba(240, 243, 239, 0.05)` inset) that separates chrome from the `#080A09` obsidian canvas.
+2. **Solid Opaque Inspection Layer:** Critical data tables, metrics, inspector panes, and the slide-over drawer sit on solid Carbon Surface (`#0E120F`) and Elevated Slate (`#1D251E`). Zero translucency behind numbers, guaranteeing 100% optical legibility and zero sub-pixel rendering fringing.
+3. **Tabular Numerals & Monospace Parity:** `DM Mono` is prioritized first in `--font-mono` so every number, latency delta, token rate, and timestamp occupies identical 0.6em character pitch across Windows, macOS, and Linux client environments.
+4. **Focused Accents & A11y:** Focus rings use a high-contrast 2px neon lime (`#95D500`) outline with 2px offset (contrast ratio 11.1:1 on canvas, exceeding WCAG AAA). Mouse `:focus:not(:focus-visible)` is suppressed to eliminate browser click artifacts.
 
 ### Hero Metric: Headroom on the Binding Constraint
 
@@ -561,6 +583,8 @@ Horizontal gauge of measured drift against the **declared** tolerance. Within to
 
   /* motion */
   --ease:cubic-bezier(.32,.72,0,1); --ease-exit:cubic-bezier(.4,0,1,1);
+  --ease-spring-snappy:cubic-bezier(.16,1,.3,1); --ease-spring-ui:cubic-bezier(.25,1,.5,1);
+  --scale-active:.98; --t-press:70ms;
   --t-fast:120ms; --t-base:200ms; --t-slow:360ms;
 
   /* type */
@@ -584,7 +608,10 @@ Horizontal gauge of measured drift against the **declared** tolerance. Within to
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:var(--t-fast)!important}}
 
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+:focus:not(:focus-visible){outline:none}
+.num, .tabular-nums, [data-tabular]{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+button:not(:disabled):not([aria-disabled="true"]){transition:transform var(--t-fast) var(--ease-spring-snappy)}
+button:active:not(:disabled):not([aria-disabled="true"]){transform:scale(var(--scale-active,.98));transition:transform var(--t-press,70ms) ease-out}
 .hero-num{font-family:var(--font-display);font-variation-settings:"opsz" 32;font-weight:700;
   font-size:clamp(56px,11vw,144px);line-height:.95;letter-spacing:-.05em}
 ```
@@ -645,17 +672,17 @@ Never trade a working verification flow for visual polish. If time runs short, d
 
 ## Changelog
 
-| Area | v1 | v2.0 | v2.1 (this version) |
-|---|---|---|---|
-| Identity | Cyberpunk Systems Command Center | The Verified Instrument | Unchanged |
-| Density | One dense scale | Two tiers | Adds hybrid screens, a screen tier map, and a 360px responsive contract |
-| Material | Solid slabs only | Glass on sidebar and floating layers | The drawer is explicitly solid; border definitions never mix |
-| Motion | Instant everywhere | Instant data, spring space, one reveal | Reveal requires the derived verified winner; charts draw once on mount |
-| Type | Inter + DM Mono | Adds Inter Display | DM Mono is first in the mono stack so numbers match everywhere |
-| Green | Active tabs, selected cards, HUD border | Green reserved for proof and focus | Adds The Not-Green-by-Default Rule and the One Green Moment Rule |
-| Status | One badge set | Selected vs Winner split | Four-dimension model; Verified Winner derived; feasible-unverified is a neutral outline |
-| Hero | Not defined | Headroom numeral | Headroom on the binding constraint, always naming its metric and ceiling |
-| Shell | Sidebar only | Sidebar, scroll-edge toolbar | Adds context bar, status bar, drawer, hotkeys; explicitly no window controls |
-| Charts | Scrubber only | Scrubber with glass HUD | Adds trade-off plot (measured points only), head-to-head delta, drift gate |
-| Honesty | `DEMO DATA` labeling | Same | Adds no invented numbers, conditional CLI flags, declared-tolerance fail-closed |
-| Colors | One palette | Adds text-tertiary, glass tokens | Retired list: `#151916`, `#1D241F`, `#252E27`, `#6E7C70`, `#EF4444`, `#F59E0B`, `#38BDF8`, `#263328` |
+| Area | v1 | v2.0 | v2.1 | v2.2 (this version) |
+|---|---|---|---|---|
+| Identity | Cyberpunk Systems Command Center | The Verified Instrument | Unchanged | Apple Pro Workstation × Cyberpunk Command Center |
+| Density | One dense scale | Two tiers | Adds hybrid screens, a screen tier map, and a 360px responsive contract | Unchanged |
+| Material | Solid slabs only | Glass on sidebar and floating layers | The drawer is explicitly solid; border definitions never mix | Adds `--glass-highlight: rgba(240, 243, 239, 0.05)` specular rim, `--glass-scrim`, and ambient StageHero mesh |
+| Motion | Instant everywhere | Instant data, spring space, one reveal | Reveal requires the derived verified winner; charts draw once on mount | Formalized `--ease-spring-snappy: cubic-bezier(0.16, 1, 0.3, 1)` and guarded `:active` micro-press (`scale(0.98)`) |
+| Type | Inter + DM Mono | Adds Inter Display | DM Mono is first in the mono stack so numbers match everywhere | Enforces `font-variant-numeric: tabular-nums` across `.tabular-nums` and `.num`; DM Mono prioritized |
+| Green | Active tabs, selected cards, HUD border | Green reserved for proof and focus | Adds The Not-Green-by-Default Rule and the One Green Moment Rule | Unchanged |
+| Status | One badge set | Selected vs Winner split | Four-dimension model; Verified Winner derived; feasible-unverified is a neutral outline | Unchanged |
+| Hero | Not defined | Headroom numeral | Headroom on the binding constraint, always naming its metric and ceiling | StageHero ambient mesh vignette and dynamic binding constraint gauge |
+| Shell | Sidebar only | Sidebar, scroll-edge toolbar | Adds context bar, status bar, drawer, hotkeys; explicitly no window controls | High-DPI tensor core brand mark, favicon package, Apple touch icon, CSS shell dimensions |
+| Charts | Scrubber only | Scrubber with glass HUD | Adds trade-off plot (measured points only), head-to-head delta, drift gate | Responsive SVG diagrams (pipeline, verification gates, 2×2 matrix) |
+| Honesty | `DEMO DATA` labeling | Same | Adds no invented numbers, conditional CLI flags, declared-tolerance fail-closed | Unchanged |
+| Colors | One palette | Adds text-tertiary, glass tokens | Retired list: `#151916`, `#1D241F`, `#252E27`, `#6E7C70`, `#EF4444`, `#F59E0B`, `#38BDF8`, `#263328` | Focus ring aliases `--focus` / `--border-focus` (`#95D500`) |

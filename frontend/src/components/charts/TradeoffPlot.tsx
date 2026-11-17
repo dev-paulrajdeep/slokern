@@ -265,53 +265,63 @@ export const TradeoffPlot: React.FC<TradeoffPlotProps> = ({
                 />
               )}
 
-              {/* Point ID Label */}
-              <text
-                x={cx}
-                y={cy - 12}
-                fill={isSelected ? 'var(--text-primary, #F0F3EF)' : 'var(--text-secondary, #A0AAA0)'}
-                fontSize="11px"
-                fontFamily="var(--font-mono, monospace)"
-                fontWeight={isSelected ? 700 : 500}
-                textAnchor="middle"
-              >
-                {c.id}
-              </text>
+              {/* Point ID Label — only shown for selected candidate, abbreviated to avoid clutter */}
+              {isSelected && (
+                <text
+                  x={cx}
+                  y={cy - 18}
+                  fill="var(--text-primary, #F0F3EF)"
+                  fontSize="10px"
+                  fontFamily="var(--font-mono, monospace)"
+                  fontWeight={700}
+                  textAnchor="middle"
+                >
+                  {c.id.slice(-6)}
+                </text>
+              )}
             </g>
           );
         })}
       </svg>
 
-      {/* Hover Tooltip (Glass Float) */}
-      {hoveredCandidate && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '24px',
-            right: '24px',
-            backgroundColor: 'var(--glass-float, rgba(29, 37, 30, 0.88))',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid var(--border-strong, #384635)',
-            borderRadius: '4px',
-            padding: '10px 14px',
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono, monospace)',
-            color: 'var(--text-primary, #F0F3EF)',
-            pointerEvents: 'none',
-            zIndex: 10,
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: '4px', color: hoveredCandidate.feasible ? 'var(--primary-bright, #95D500)' : 'var(--error, #FF5555)' }}>
-            {hoveredCandidate.id} · {hoveredCandidate.name} ({hoveredCandidate.feasible ? 'FEASIBLE' : 'INFEASIBLE'})
+      {/* Hover Tooltip (Glass Float) — quadrant-aware positioning to prevent covering data point or title */}
+      {hoveredCandidate && (() => {
+        const cx = hoveredCandidate.p95 != null ? scaleX(hoveredCandidate.p95) : margin.left + plotWidth / 2;
+        const cy = hoveredCandidate.throughput != null ? scaleY(hoveredCandidate.throughput) : margin.top + plotHeight / 2;
+        const isRightHalf = cx > margin.left + plotWidth / 2;
+        const isBottomHalf = cy > margin.top + plotHeight / 2;
+
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              ...(isBottomHalf ? { top: '72px', bottom: 'unset' as const } : { bottom: '24px', top: 'unset' as const }),
+              ...(isRightHalf ? { left: '24px', right: 'unset' as const } : { right: '24px', left: 'unset' as const }),
+              backgroundColor: 'var(--glass-float, rgba(29, 37, 30, 0.88))',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid var(--border-strong, #384635)',
+              borderRadius: '4px',
+              padding: '10px 14px',
+              fontSize: '11px',
+              fontFamily: 'var(--font-mono, monospace)',
+              color: 'var(--text-primary, #F0F3EF)',
+              pointerEvents: 'none',
+              zIndex: 10,
+              boxShadow: 'var(--shadow-md)',
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: '4px', color: hoveredCandidate.feasible ? 'var(--primary-bright, #95D500)' : 'var(--error, #FF5555)' }}>
+              {hoveredCandidate.id} · {hoveredCandidate.name} ({hoveredCandidate.feasible ? 'FEASIBLE' : 'INFEASIBLE'})
+            </div>
+            <div>TTFT P95: {formatLatency(hoveredCandidate.ttftP95)}</div>
+            <div>ITL P95: {formatLatency(hoveredCandidate.itlP95)}</div>
+            <div>End-to-end P95: {formatLatency(hoveredCandidate.e2eP95)}</div>
+            <div>Throughput: {formatNumber(hoveredCandidate.throughput, 1)} tok/s</div>
+            <div>KV Cache: {hoveredCandidate.kvCache ?? '—'} · Batch: {hoveredCandidate.batch ?? '—'}</div>
           </div>
-          <div>TTFT P95: {formatLatency(hoveredCandidate.ttftP95)}</div>
-          <div>ITL P95: {formatLatency(hoveredCandidate.itlP95)}</div>
-          <div>End-to-end P95: {formatLatency(hoveredCandidate.e2eP95)}</div>
-          <div>Throughput: {formatNumber(hoveredCandidate.throughput, 1)} tok/s</div>
-          <div>KV Cache: {hoveredCandidate.kvCache ?? '—'} · Batch: {hoveredCandidate.batch ?? '—'}</div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

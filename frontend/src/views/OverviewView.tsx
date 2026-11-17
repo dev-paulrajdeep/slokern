@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StageHero } from '../components/stage/StageHero';
 import { VerifiedReveal } from '../components/stage/VerifiedReveal';
 import { SloGauge } from '../components/stage/SloGauge';
@@ -14,6 +14,8 @@ import type { VerificationDerivationResult } from '../lib/status';
 import type { UICandidate, UIExperiment } from '../lib/adapters/viewModel';
 import { mapSmokeTestEvidence } from '../lib/adapters/viewModel';
 import { buildVllmLaunchCommand } from '../lib/vllm';
+import { InferencePipelineDiagram } from '../components/diagrams/InferencePipelineDiagram';
+import type { PipelineStageId, StageExecutionStatus } from '../components/diagrams/InferencePipelineDiagram';
 import type { SmokeTestArtifactResponse, RuntimeProfileResponse, PercentileDistribution } from '../types/contracts';
 
 interface OverviewViewProps {
@@ -124,6 +126,52 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     }
     showToast(`Exported decision audit (JSONL) with ${auditRecords.length} records`);
     onExportAuditJsonl?.();
+  };
+
+  const [showPipelineDiagram, setShowPipelineDiagram] = useState(false);
+  const [selectedPipelineStage, setSelectedPipelineStage] = useState<string>('verification-gate');
+
+  // Keyboard Hotkey Listener: [V] Deploy Flags, [E] Export Audit, [R] Replay
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === 'v' || e.key === 'V') {
+        e.preventDefault();
+        handleDeployVllm();
+      } else if (e.key === 'e' || e.key === 'E') {
+        e.preventDefault();
+        handleExportJsonl();
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        triggerReplay();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [recommendedCandidate, candidates, activeExperiment, isVerified, vllmLaunchCommand, triggerReplay]);
+
+  const pipelineStageStatuses: Partial<Record<PipelineStageId, StageExecutionStatus>> = {
+    'workload-profiler': 'completed',
+    'vllm-engine': 'completed',
+    'metric-engine': 'completed',
+    'feasibility-evaluator': hasSelectedFeasibleWinner ? 'completed' : 'infeasible',
+    'verification-gate': isVerified
+      ? 'completed'
+      : verificationStatus.statusType === 'infeasible'
+        ? 'infeasible'
+        : 'pending',
   };
 
   return (
@@ -297,6 +345,78 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           vllmFlags={vllmLaunchCommand}
         />
       </VerifiedReveal>
+
+      {/* Expandable Architecture Diagram Affordance */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => setShowPipelineDiagram((prev) => !prev)}
+            className="action-toolbar-btn"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 14px',
+              fontSize: '12px',
+              borderColor: showPipelineDiagram ? 'var(--primary, #76B900)' : 'var(--border-strong, #384635)',
+              color: showPipelineDiagram ? 'var(--primary-bright, #95D500)' : 'var(--text-primary, #F0F3EF)',
+            }}
+            aria-expanded={showPipelineDiagram}
+            aria-controls="inference-pipeline-diagram-panel"
+          >
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+            <span>{showPipelineDiagram ? 'Hide Architecture Diagram' : 'Show Architecture Diagram'}</span>
+            <span className="keycap-badge" style={{ fontSize: '10px' }}>5 STAGES</span>
+            <span style={{ transform: showPipelineDiagram ? 'rotate(180deg)' : 'none', transition: 'transform 200ms ease' }}>▾</span>
+          </button>
+
+          <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
+            {showPipelineDiagram ? 'Interactive SVG Pipeline Schematic Active' : 'Expand to trace microsecond telemetry pipeline'}
+          </span>
+        </div>
+
+        {showPipelineDiagram && (
+          <div
+            id="inference-pipeline-diagram-panel"
+            className="workspace-enter"
+            style={{
+              backgroundColor: 'var(--surface, #0E120F)',
+              border: '1px solid var(--border-strong, #384635)',
+              borderRadius: '8px',
+              padding: '20px',
+              boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.6)), inset 0 1px 0 0 rgba(240, 243, 239, 0.05)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 650, color: 'var(--text-primary, #F0F3EF)' }}>
+                  System Inference Pipeline Architecture
+                </h2>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-secondary, #A0AAA0)' }}>
+                  End-to-end data flow: Workload Profiling → vLLM Serving Engine → Metric Engine → Feasibility Evaluator → Verification Gate
+                </p>
+              </div>
+              <span style={{ fontSize: 'var(--text-micro, 11px)', fontFamily: 'var(--font-mono, monospace)', color: 'var(--primary-bright, #95D500)' }}>
+                Trace Contract: src/slokern/contracts/
+              </span>
+            </div>
+
+            <InferencePipelineDiagram
+              activeStage={selectedPipelineStage}
+              onSelectStage={(stageId) => setSelectedPipelineStage(stageId)}
+              stageStatuses={pipelineStageStatuses}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Campaign Search Budget & Stopping Condition with Streamlined Triage Dimension Cards */}
       <div
@@ -604,16 +724,40 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         </div>
 
         <div className="action-toolbar-group">
+          {/* Deploy Flags (Hotkey: V) */}
           <button
             type="button"
             onClick={handleDeployVllm}
             className="action-toolbar-btn primary"
-            title="Copy CLI launch command to deploy candidate via vLLM (Hotkey: C)"
+            title="Copy CLI launch command to deploy candidate via vLLM (Hotkey: V)"
           >
-            <span className="keycap-badge">C</span>
-            <span>Deploy via vLLM</span>
+            <span className="keycap-badge">V</span>
+            <span>Deploy Flags</span>
           </button>
 
+          {/* Export Decision Audit (Hotkey: E) */}
+          <button
+            type="button"
+            onClick={handleExportJsonl}
+            className="action-toolbar-btn"
+            title="Download decision audit records in JSONL format (Hotkey: E)"
+          >
+            <span className="keycap-badge">E</span>
+            <span>Export Audit (JSONL)</span>
+          </button>
+
+          {/* Replay Reveal Sequence (Hotkey: R) */}
+          <button
+            type="button"
+            onClick={triggerReplay}
+            className="action-toolbar-btn"
+            title="Replay verified reveal sequence (Hotkey: R)"
+          >
+            <span className="keycap-badge">R</span>
+            <span>Replay</span>
+          </button>
+
+          {/* Navigate to Verification Workspace (Hotkey: 5) */}
           <button
             type="button"
             onClick={onNavigateToVerification}
@@ -622,20 +766,6 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           >
             <span className="keycap-badge">5</span>
             <span>Verify with Fresh Run →</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportJsonl}
-            className="action-toolbar-btn"
-            title="Download decision audit records in JSONL format"
-          >
-            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            <span>Export Decision Audit (JSONL)</span>
           </button>
         </div>
       </div>

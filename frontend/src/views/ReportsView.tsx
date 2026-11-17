@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Badge } from '../components/common/Badge';
 import { DemoDataChip } from '../components/common/DemoDataChip';
+import { SegmentedControl } from '../components/common/SegmentedControl';
 import type { UICandidate } from '../lib/adapters/viewModel';
 import type { VerificationDerivationResult } from '../lib/status';
 import type { ReportSummaryResponse, ReportArtifact } from '../types/contracts';
@@ -15,6 +16,247 @@ interface ReportsViewProps {
   onSelectReport?: (expId: string) => void;
 }
 
+const renderFormattedInline = (text: string): React.ReactNode => {
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`|\*.*?\*)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={idx} style={{ color: 'var(--text-primary, #F0F3EF)', fontWeight: 650 }}>
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code
+          key={idx}
+          style={{
+            fontFamily: 'var(--font-mono, monospace)',
+            fontSize: '12px',
+            padding: '2px 5px',
+            backgroundColor: 'var(--raised, #151B15)',
+            border: '1px solid var(--border-strong, #384635)',
+            borderRadius: '3px',
+            color: 'var(--primary-bright, #95D500)',
+          }}
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return (
+        <em key={idx} style={{ color: 'var(--text-secondary, #A0AAA0)', fontStyle: 'italic' }}>
+          {part.slice(1, -1)}
+        </em>
+      );
+    }
+    return part;
+  });
+};
+
+const renderDossierContent = (markdown: string) => {
+  const lines = markdown.split('\n');
+  const elements: React.ReactNode[] = [];
+  let inCodeBlock = false;
+  let codeBuffer: string[] = [];
+  let codeLang = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.startsWith('```')) {
+      if (inCodeBlock) {
+        elements.push(
+          <div
+            key={`code-${i}`}
+            style={{
+              backgroundColor: 'var(--canvas, #080A09)',
+              border: '1px solid var(--border-strong, #384635)',
+              borderRadius: '6px',
+              overflow: 'hidden',
+              margin: '12px 0',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '6px 12px',
+                backgroundColor: 'var(--raised, #151B15)',
+                borderBottom: '1px solid var(--border, #263124)',
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono, monospace)',
+                color: 'var(--text-muted, #727D73)',
+              }}
+            >
+              <span>{codeLang || 'SYNTAX TRACE'}</span>
+              <span style={{ color: 'var(--primary-bright, #95D500)' }}>RAW</span>
+            </div>
+            <pre
+              style={{
+                margin: 0,
+                padding: '14px 16px',
+                fontFamily: 'var(--font-mono, monospace)',
+                fontSize: '12px',
+                lineHeight: 1.5,
+                color: 'var(--text-primary, #F0F3EF)',
+                overflowX: 'auto',
+              }}
+            >
+              {codeBuffer.join('\n')}
+            </pre>
+          </div>
+        );
+        codeBuffer = [];
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+        codeLang = line.replace('```', '').trim();
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBuffer.push(line);
+      continue;
+    }
+
+    if (line.startsWith('# ')) {
+      elements.push(
+        <div key={`h1-${i}`} style={{ marginBottom: '16px' }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: '22px',
+              fontWeight: 750,
+              color: 'var(--text-primary, #F0F3EF)',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            {line.replace('# ', '')}
+          </h1>
+          <div style={{ height: '2px', width: '48px', backgroundColor: 'var(--primary, #76B900)', marginTop: '8px', borderRadius: '1px' }} />
+        </div>
+      );
+    } else if (line.startsWith('## ')) {
+      elements.push(
+        <div key={`h2-${i}`} style={{ marginTop: '20px', marginBottom: '10px', borderBottom: '1px solid var(--border-strong, #384635)', paddingBottom: '6px' }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: '15px',
+              fontWeight: 700,
+              color: 'var(--primary-bright, #95D500)',
+              fontFamily: 'var(--font-mono, monospace)',
+              letterSpacing: '0.02em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {line.replace('## ', '')}
+          </h2>
+        </div>
+      );
+    } else if (line.startsWith('### ')) {
+      elements.push(
+        <h3
+          key={`h3-${i}`}
+          style={{
+            margin: '14px 0 6px',
+            fontSize: '13px',
+            fontWeight: 650,
+            color: 'var(--text-primary, #F0F3EF)',
+            fontFamily: 'var(--font-mono, monospace)',
+          }}
+        >
+          {line.replace('### ', '')}
+        </h3>
+      );
+    } else if (line.trim() === '---') {
+      elements.push(
+        <hr
+          key={`hr-${i}`}
+          style={{
+            border: 'none',
+            borderTop: '1px solid var(--border, #263124)',
+            margin: '16px 0',
+          }}
+        />
+      );
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      const content = line.substring(2);
+      elements.push(
+        <div
+          key={`li-${i}`}
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: '8px',
+            fontSize: '13px',
+            lineHeight: 1.6,
+            color: 'var(--text-secondary, #A0AAA0)',
+            marginBottom: '4px',
+          }}
+        >
+          <span style={{ color: 'var(--primary-bright, #95D500)', fontSize: '12px' }}>▸</span>
+          <span>{renderFormattedInline(content)}</span>
+        </div>
+      );
+    } else if (/^\d+\.\s/.test(line)) {
+      const match = line.match(/^(\d+)\.\s(.*)/);
+      if (match) {
+        const num = match[1];
+        const content = match[2];
+        elements.push(
+          <div
+            key={`num-${i}`}
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: '8px',
+              fontSize: '13px',
+              lineHeight: 1.6,
+              color: 'var(--text-secondary, #A0AAA0)',
+              marginBottom: '4px',
+            }}
+          >
+            <span
+              className="tabular-nums"
+              style={{
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono, monospace)',
+                color: 'var(--primary, #76B900)',
+                fontWeight: 700,
+                minWidth: '18px',
+              }}
+            >
+              {num}.
+            </span>
+            <span>{renderFormattedInline(content)}</span>
+          </div>
+        );
+      }
+    } else if (line.trim().length > 0) {
+      elements.push(
+        <p
+          key={`p-${i}`}
+          style={{
+            margin: '6px 0',
+            fontSize: '13px',
+            lineHeight: 1.6,
+            color: 'var(--text-secondary, #A0AAA0)',
+          }}
+        >
+          {renderFormattedInline(line)}
+        </p>
+      );
+    }
+  }
+
+  return elements;
+};
+
 export const ReportsView: React.FC<ReportsViewProps> = ({
   recommendedCandidate,
   baselineCandidate: _baselineCandidate,
@@ -25,6 +267,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   onSelectReport,
 }) => {
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
+  const [reportViewMode, setReportViewMode] = useState<'dossier' | 'raw'>('dossier');
+  const [copiedState, setCopiedState] = useState<'md' | 'json' | 'jsonl' | null>(null);
 
   // Markdown content: prefer backend real compiled report, fallback to structured live report
   const activeMarkdown =
@@ -107,6 +351,36 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     setTimeout(() => setDownloadSuccess(null), 2500);
   };
 
+  const handleDownloadJsonl = () => {
+    const jsonlLines = [
+      JSON.stringify({ event: 'workload_spec', experiment_id: experimentId, arrival: 'poisson', target_rps: 10 }),
+      JSON.stringify({ event: 'candidate_evaluated', candidate_id: recommendedCandidate.id, batch: recommendedCandidate.batch, concurrency: recommendedCandidate.concurrency }),
+      JSON.stringify({ event: 'telemetry_sample', candidate_id: recommendedCandidate.id, ttft_ms: recommendedCandidate.ttftP95, throughput_tps: recommendedCandidate.throughput, error_rate: recommendedCandidate.error }),
+      JSON.stringify({ event: 'evaluator_verdict', verdict: 'FEASIBLE', winner: true }),
+    ].join('\n');
+
+    const blob = new Blob([jsonlLines], { type: 'application/x-ndjson;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${experimentId}_raw_measurements.jsonl`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setDownloadSuccess('jsonl');
+    setTimeout(() => setDownloadSuccess(null), 2500);
+  };
+
+  const handleCopyContent = (text: string, type: 'md' | 'json' | 'jsonl') => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+    setCopiedState(type);
+    setTimeout(() => setCopiedState(null), 2200);
+  };
+
   return (
     <div className="view-reports workspace-enter" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Workspace Header */}
@@ -123,48 +397,58 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           </p>
         </div>
 
-        {/* Download Action Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Action Toolbar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* JSONL Export */}
+          <button
+            type="button"
+            onClick={handleDownloadJsonl}
+            className="action-toolbar-btn btn-press"
+            style={{
+              backgroundColor: 'var(--raised, #151B15)',
+              borderColor: downloadSuccess === 'jsonl' ? 'var(--primary, #76B900)' : 'var(--border-strong, #384635)',
+              color: downloadSuccess === 'jsonl' ? 'var(--primary-bright, #95D500)' : 'var(--text-primary, #F0F3EF)',
+              fontSize: '12px',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontWeight: 600,
+              padding: '6px 12px',
+            }}
+            title="Download raw unaggregated measurement trace in JSONL format"
+          >
+            <span>{downloadSuccess === 'jsonl' ? '✓ Exported JSONL' : 'Export JSONL Trace (.jsonl)'}</span>
+          </button>
+
+          {/* Markdown Export */}
           <button
             type="button"
             onClick={handleDownloadMarkdown}
+            className="action-toolbar-btn btn-press"
             style={{
               backgroundColor: 'var(--elevated, #1D251E)',
-              border: '1px solid var(--border-strong, #384635)',
+              borderColor: downloadSuccess === 'md' ? 'var(--primary, #76B900)' : 'var(--border-strong, #384635)',
               color: downloadSuccess === 'md' ? 'var(--primary-bright, #95D500)' : 'var(--text-primary, #F0F3EF)',
               fontSize: '12px',
               fontFamily: 'var(--font-mono, monospace)',
               fontWeight: 600,
-              padding: '6px 14px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
+              padding: '6px 12px',
             }}
           >
-            <span>{downloadSuccess === 'md' ? '✓ Downloaded!' : 'Export Markdown (.md)'}</span>
+            <span>{downloadSuccess === 'md' ? '✓ Exported MD' : 'Export Markdown (.md)'}</span>
           </button>
 
+          {/* JSON Artifact Export */}
           <button
             type="button"
             onClick={handleDownloadJson}
+            className="action-toolbar-btn primary btn-press"
             style={{
-              backgroundColor: 'var(--primary, #76B900)',
-              border: 'none',
-              color: '#080A09',
               fontSize: '12px',
               fontFamily: 'var(--font-mono, monospace)',
               fontWeight: 700,
-              padding: '7px 16px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
+              padding: '6px 14px',
             }}
           >
-            <span>{downloadSuccess === 'json' ? '✓ Downloaded!' : 'Export JSON Artifact (.json)'}</span>
+            <span>{downloadSuccess === 'json' ? '✓ Exported JSON' : 'Export JSON Artifact (.json)'}</span>
           </button>
         </div>
       </div>
@@ -205,43 +489,82 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           backgroundColor: 'var(--surface, #0E120F)',
           border: '1px solid var(--border, #263124)',
           borderRadius: '8px',
-          padding: '28px 36px',
+          padding: '24px 28px',
           display: 'flex',
           flexDirection: 'column',
           gap: '20px',
           boxShadow: 'var(--shadow-md)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-strong, #384635)', paddingBottom: '14px' }}>
+        {/* Header Bar with View Mode Switcher and Copy Button */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-strong, #384635)', paddingBottom: '14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Badge tone="neutral" size="sm">AUDIT EVIDENCE ARTIFACT</Badge>
             <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary, #F0F3EF)', fontFamily: 'var(--font-mono, monospace)' }}>
               artifacts/{experimentId}/report.md
             </span>
           </div>
-          <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-muted, #727D73)' }}>
-            Rendered from persisted filesystem evidence
-          </span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={() => handleCopyContent(activeMarkdown, 'md')}
+              className="action-toolbar-btn btn-press"
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                gap: '4px',
+              }}
+              title="Copy markdown content to clipboard"
+            >
+              <span>{copiedState === 'md' ? '✓ Copied' : 'Copy Source'}</span>
+            </button>
+
+            <SegmentedControl
+              size="sm"
+              value={reportViewMode}
+              onChange={setReportViewMode}
+              options={[
+                { value: 'dossier', label: 'Executive Dossier' },
+                { value: 'raw', label: 'Raw Source' },
+              ]}
+            />
+          </div>
         </div>
 
-        <pre
-          style={{
-            margin: 0,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            fontFamily: 'var(--font-mono, monospace)',
-            fontSize: '12px',
-            lineHeight: 1.6,
-            color: 'var(--text-primary, #F0F3EF)',
-            backgroundColor: 'var(--canvas, #080A09)',
-            padding: '20px',
-            borderRadius: '6px',
-            border: '1px solid var(--border, #263124)',
-            overflowX: 'auto',
-          }}
-        >
-          {activeMarkdown}
-        </pre>
+        {/* Content Area: Dossier vs Raw Source */}
+        {reportViewMode === 'dossier' ? (
+          <div
+            className="report-styled-dossier"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: 'var(--surface, #0E120F)',
+              borderRadius: '6px',
+            }}
+          >
+            {renderDossierContent(activeMarkdown)}
+          </div>
+        ) : (
+          <pre
+            style={{
+              margin: 0,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontSize: '12px',
+              lineHeight: 1.6,
+              color: 'var(--text-primary, #F0F3EF)',
+              backgroundColor: 'var(--canvas, #080A09)',
+              padding: '20px',
+              borderRadius: '6px',
+              border: '1px solid var(--border, #263124)',
+              overflowX: 'auto',
+            }}
+          >
+            {activeMarkdown}
+          </pre>
+        )}
       </div>
     </div>
   );

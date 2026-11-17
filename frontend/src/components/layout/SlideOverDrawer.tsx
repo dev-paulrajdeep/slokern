@@ -13,6 +13,7 @@ export interface SlideOverDrawerProps {
   eyebrow?: string;
   children?: React.ReactNode;
   width?: string;
+  footer?: React.ReactNode;
 }
 
 export interface CandidateDiagnosticsProps {
@@ -328,7 +329,35 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   eyebrow,
   children,
   width = '520px',
+  footer,
 }) => {
+  const [isRendered, setIsRendered] = useState(isOpen);
+  const [isExiting, setIsExiting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsRendered(true);
+      setIsExiting(false);
+    } else if (isRendered) {
+      const prefersReducedMotion =
+        typeof window !== 'undefined' &&
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (prefersReducedMotion) {
+        setIsRendered(false);
+        setIsExiting(false);
+      } else {
+        setIsExiting(true);
+        const timer = setTimeout(() => {
+          setIsRendered(false);
+          setIsExiting(false);
+        }, 220);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isOpen, isRendered]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -343,19 +372,22 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isRendered) return null;
 
   return (
     <div
-      className="slide-over-backdrop"
+      className={`slide-over-backdrop ${isExiting ? 'exiting' : 'entering'}`}
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.72)',
-        backdropFilter: 'blur(6px)',
+        backgroundColor: 'var(--glass-scrim, rgba(8, 10, 9, 0.65))',
+        WebkitBackdropFilter: 'var(--glass-blur-float, blur(20px) saturate(140%))',
+        backdropFilter: 'var(--glass-blur-float, blur(20px) saturate(140%))',
         zIndex: 100,
         display: 'flex',
         justifyContent: 'flex-end',
+        transition: 'opacity 200ms var(--ease-spring-snappy)',
+        opacity: isExiting ? 0 : 1,
       }}
       onClick={onClose}
       role="dialog"
@@ -363,18 +395,20 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
       aria-labelledby="drawer-title"
     >
       <div
-        className="slide-over-panel"
+        className={`slide-over-panel ${isExiting ? 'exiting' : 'entering'}`}
         style={{
           width: '100%',
           maxWidth: width,
           height: '100%',
           backgroundColor: 'var(--elevated, #1D251E)',
           borderLeft: '1px solid var(--border-strong, #384635)',
-          boxShadow: 'var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.75))',
+          boxShadow: 'inset 1px 0 0 var(--glass-highlight, rgba(240, 243, 239, 0.05)), -12px 0 32px rgba(0, 0, 0, 0.65)',
           display: 'flex',
           flexDirection: 'column',
           boxSizing: 'border-box',
           overflow: 'hidden',
+          transition: 'transform 240ms var(--ease-spring-snappy), opacity 200ms ease',
+          transform: isExiting ? 'translateX(100%)' : 'translateX(0)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -384,9 +418,10 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '18px 24px',
+            padding: '16px 24px',
             borderBottom: '1px solid var(--border, #263124)',
             backgroundColor: 'var(--surface, #0E120F)',
+            boxShadow: 'inset 0 1px 0 var(--glass-highlight, rgba(240, 243, 239, 0.05))',
           }}
         >
           <div>
@@ -422,8 +457,11 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
             onClick={onClose}
             className="action-toolbar-btn"
             style={{
-              padding: '4px 8px',
+              minHeight: '28px',
+              padding: '4px 10px',
               fontSize: '11px',
+              display: 'inline-flex',
+              alignItems: 'center',
               gap: '6px',
             }}
             title="Close inspector (Esc)"
@@ -441,10 +479,30 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
             overflowY: 'auto',
             flex: 1,
             color: 'var(--text-primary, #F0F3EF)',
+            scrollBehavior: 'smooth',
           }}
         >
           {children}
         </div>
+
+        {/* Optional Drawer Footer */}
+        {footer && (
+          <div
+            className="slide-over-footer"
+            style={{
+              padding: '14px 24px',
+              borderTop: '1px solid var(--border, #263124)',
+              backgroundColor: 'var(--surface, #0E120F)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: '12px',
+              boxShadow: 'inset 0 1px 0 var(--glass-highlight, rgba(240, 243, 239, 0.05))',
+            }}
+          >
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

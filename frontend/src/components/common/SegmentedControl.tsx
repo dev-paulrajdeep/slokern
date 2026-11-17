@@ -1,3 +1,4 @@
+import React from 'react';
 
 interface SegmentOption<T extends string> {
   value: T;
@@ -16,7 +17,7 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   size = 'md',
-}: SegmentedControlProps<T>) {
+}: SegmentedControlProps<T>): React.ReactElement {
   const isSm = size === 'sm';
   return (
     <div

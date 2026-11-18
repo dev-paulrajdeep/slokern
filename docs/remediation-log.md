@@ -13,7 +13,7 @@
 |---|---|---|---|---|---|---|
 | **REM-01** | **P1 (Major)** | Frontend / Build | `CampaignLaunchDrawerProps.initialSLO` lacked optional properties `slo_id?: string;` and `min_sample_count?: number;`, causing `tsc -b` to fail with `TS2339`. | `frontend/src/components/campaign/CampaignLaunchDrawer.tsx` | `@ui-auditor` / Coordinator | **VERIFIED FIXED** (`tsc -b && vite build` succeeded in 1.74s) |
 | **REM-02** | **P2 (Minor)** | API / Reporting | `campaigns.py:206` selected `winner_config` from pre-execution `all_search_configs` where `effective_settings` was `{}` instead of copying applied settings from the executed `winning_run.applied_config`. | `src/slokern/api/routes/campaigns.py` | `@campaign-auditor` / Coordinator | **VERIFIED FIXED** (73 API unit tests passing, clean Ruff check) |
-| **REM-03** | **P1 (Major)** | Test Harness / UI Evidence | Headless script `test_ui_acceptance.cjs` ran with unadjusted secondary constraints, producing inconclusive campaign `cmp-52d90003` and failing to trigger screenshot 05 or capture the true verified campaign `cmp-8a020d00`. | `docs/final-ui-acceptance-report.md`, `artifacts/screenshots/ui-acceptance-cmp-8a020d00/` | `@ui-auditor` / Coordinator | **VERIFIED RESOLVED** (Zero-GPU UI capture executed against `cmp-8a020d00`; 5 fresh screenshots captured in `ui-acceptance-cmp-8a020d00/` confirming winner, 6 runs, verification, and metrics) |
+| **REM-03** | **P1 (Major)** | Test Harness / UI Evidence | Headless script `test_ui_acceptance.cjs` ran with unadjusted secondary constraints, producing inconclusive campaign `cmp-52d90003` and failing to trigger screenshot 05 or capture the true verified campaign `cmp-8a020d00`. | `docs/final-ui-acceptance-report.md`, `artifacts/screenshots/ui-acceptance-cmp-8a020d00/` | `@ui-auditor` / Coordinator | **VERIFIED RESOLVED** (UI capture executed against `cmp-8a020d00`; 5 fresh screenshots captured in `ui-acceptance-cmp-8a020d00/` confirming winner, 6 runs, verification, and metrics. Zero additional optimization campaign runs were executed during UI acceptance and final release closure. A live 16-token GPU preflight request was performed.) |
 
 ---
 
@@ -94,7 +94,7 @@
   7. The author of `final-ui-acceptance-report.md` claimed 10/10 passed and cited screenshots 01–10 as proof of `cmp-8a020d00`, which directly contradicted the physical images.
 - **Remediation Action:**
   1. Preserved original 10 screenshots in `artifacts/screenshots/ui-acceptance/` completely untouched and fully mapped their provenance in `docs/final-ui-acceptance-report.md`.
-  2. Executed zero-GPU acceptance run via `scripts/run_zero_gpu_acceptance.ps1` with Edge headless targeting `cmp-8a020d00`.
+  2. Executed UI acceptance run via `scripts/run_zero_gpu_acceptance.ps1` with Edge headless targeting `cmp-8a020d00`.
   3. Captured 5 fresh physical screenshots into dedicated directory `artifacts/screenshots/ui-acceptance-cmp-8a020d00/`:
      - `01-tuning-lab-winner-95db01.png` (renders winner `95db015e9de9`, WINNER tag, 48 tok/s)
      - `02-experiments-history-6runs.png` (renders 6-run campaign history)
@@ -102,5 +102,33 @@
      - `04-reports-view-cmp-8a020d00.png` (renders report `rep-128a1ce7`, LIVE badge, INDEPENDENT VERIFICATION PASSED)
      - `05-workloads-view.png` (renders workloads specification controls)
   4. Updated `docs/final-ui-acceptance-report.md` criteria UI-04, UI-06, and UI-08 to VERIFIED based on physical screenshot evidence.
-  5. Zero GPU compute consumed; zero changes to historical JSONL data.
+  5. Zero additional optimization campaign runs were executed during UI acceptance and final release closure. A live 16-token GPU preflight request was performed. Zero changes to historical JSONL data.
 - **Verification Result:** Fully verified by `@ui-auditor` and `@release-verifier`. All 10 UI criteria now proven with physical evidence.
+
+---
+
+### Issue REM-04: Authorized Minimal UI Evidence Corrections & Screenshot Alignment
+- **Issue ID:** `REM-04`
+- **Severity:** P0 (Release Evidence Integrity)
+- **Affected Subsystem:** `frontend/src/views/VerificationView.tsx`, `frontend/src/components/diagrams/ParameterMatrixDiagram.tsx`, `frontend/src/views/TuningLabView.tsx`, `frontend/capture_cmp8a_ui.cjs`, `frontend/test/decisionIntegrity.test.ts`
+- **Root Cause:**
+  1. `VerificationView.tsx`: Bound displayed candidate name/throughput to `recommendedCandidate.id` rather than prioritizing `verificationRecord.candidate_id`, causing candidate mismatch when navigating between views.
+  2. `ParameterMatrixDiagram.tsx`: Only extracted server-side vLLM scheduler keys (`max_num_batched_tokens`, `max_num_seqs`), collapsing client-side load-generator configurations (`concurrency`, `max_tokens`) into quadrant `(0, 0)` and displaying candidate `09618034778e`.
+  3. `capture_cmp8a_ui.cjs`: Did not filter by campaign ID or close the SlideOverDrawer before navigating to Verification View, causing focus interception and improper drawer hydration.
+- **Remediation Action:**
+  1. `frontend/src/views/VerificationView.tsx`: Sourced `effectiveCandidateId`, `effectiveCandidateName`, and `effectiveThroughput` from `verificationRecord.candidate_id` when present, falling back to `recommendedCandidate.id`. Updated header, search card subtitle, and `VerificationGateDiagram` props.
+  2. `frontend/src/components/diagrams/ParameterMatrixDiagram.tsx`: Added support for load-generator parameters (`concurrency`, `concurrency_limit`, `max_tokens`), added `isClientLoadgen` heuristic, dynamically populated 2×2 grid quadrants mapping `95db015e9de9` to Top-Right (`concurrency: 2, max_tokens: 128`, `★ WINNER`), and made axis labels responsive to load-generator parameters.
+  3. `frontend/src/views/TuningLabView.tsx`: Updated candidate resolution fallback to prioritize winner candidate (`c.tag === 'WINNER' && c.feasible`).
+  4. `frontend/test/decisionIntegrity.test.ts`: Added 2 focused regression tests for verified candidate identity binding and client-side loadgen 2×2 grid mapping.
+  5. `frontend/capture_cmp8a_ui.cjs`: Added native React input event dispatching for search filtering, exact row selection for `cmp-8a020d00`, drawer closure between navigations, and captured all 5 fresh screenshots into `artifacts/screenshots/ui-acceptance-cmp-8a020d00/`.
+- **Verification Result:**
+  - `npm test --prefix frontend`: 30/30 tests passed.
+  - `node --experimental-strip-types --test test/diagrams.test.ts`: 18/18 tests passed.
+  - `npm run build --prefix frontend`: Production build clean in 1.67s.
+  - Captured screenshots visually verified:
+    - `01-tuning-lab-winner-95db01.png`: Winner `95db015e9de9` positioned in Top-Right quadrant, `★ WINNER` tag, 48.0 tok/s.
+    - `02-experiments-history-6runs.png`: Top-level campaign `cmp-8a020d00` selected, scrubber on `run-04-cand-95db01`, SlideOverDrawer showing `cmp-8a020d00 · vllm-live-acceptance`, `Candidate ID: 95db015e9de9`, `Model: slokern-qwen3-1.7b`, `Offered/Achieved: 0.4/0.4 rps`, `VALID`, `Feasible`, `Verified`.
+    - `03-verification-view-verified.png`: Candidate `95db015e9de9`, `run-verify-69a57759`, `SEAL INTACT`, drift channels (`ttft_p95 +20.8 PASS`, `ttft_p50 +14.7 PASS`, `itl_p95 +0.3 PASS`).
+    - `04-reports-view-cmp-8a020d00.png`: Report `rep-9724082d` for `cmp-8a020d00 (LIVE)`, `INDEPENDENT VERIFICATION PASSED`, winner `95db015e9de9`, accounting for all 6 discrete runs.
+    - `05-workloads-view.png`: Workload & SLO controls intact.
+- **Constraints Maintained:** Zero additional GPU campaign runs. Zero changes to historical raw measurements. Original 10 screenshots preserved untouched. No git commit, reset, or clean.

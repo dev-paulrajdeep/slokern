@@ -15,6 +15,7 @@ interface NormalizedCandidate {
   name: string;
   batch: number;
   concurrency: number;
+  maxTokens?: number;
   isConfigMapped?: boolean;
   p95: number | null;
   ttftP95: number | null;
@@ -81,11 +82,23 @@ export const ParameterMatrixDiagram: React.FC<ParameterMatrixDiagramProps> = ({
         c.conc ??
         c.max_num_seqs ??
         rawSettings.max_num_seqs ??
+        rawSettings.concurrency ??
+        rawSettings.concurrency_limit ??
+        c.rawConfig?.environment_fingerprint?.max_num_seqs ??
+        undefined;
+      const extractedMaxTokens =
+        rawSettings.max_tokens ??
+        c.max_tokens ??
+        rawSettings.max_new_tokens ??
         undefined;
 
-      const isConfigMapped = extractedBatch !== undefined || extractedConcurrency !== undefined;
+      const isConfigMapped =
+        extractedBatch !== undefined ||
+        extractedConcurrency !== undefined ||
+        extractedMaxTokens !== undefined;
       const batchVal = extractedBatch != null ? Number(extractedBatch) : 1;
       const concurrencyVal = extractedConcurrency != null ? Number(extractedConcurrency) : 16;
+      const maxTokensVal = extractedMaxTokens != null ? Number(extractedMaxTokens) : undefined;
       const ttftVal = c.ttftP95 ?? c.p95 ?? c.metricSet?.ttft_ms?.p95 ?? null;
       const throughputVal = c.throughput ?? c.metricSet?.token_throughput_tps ?? null;
       const itlVal = c.itlP95 ?? c.metricSet?.itl_ms?.p95 ?? null;
@@ -108,6 +121,7 @@ export const ParameterMatrixDiagram: React.FC<ParameterMatrixDiagramProps> = ({
         name: c.name || `Candidate ${c.id || 'Unknown'}`,
         batch: Number(batchVal),
         concurrency: Number(concurrencyVal),
+        maxTokens: maxTokensVal,
         isConfigMapped,
         p95: ttftVal != null ? Number(ttftVal) : null,
         ttftP95: ttftVal != null ? Number(ttftVal) : null,
@@ -136,24 +150,49 @@ export const ParameterMatrixDiagram: React.FC<ParameterMatrixDiagramProps> = ({
     }
   }, [normalizedCandidates]);
 
+  // Determine whether candidate configurations use client-side loadgen parameters
+  const isClientLoadgen = useMemo(() => {
+    return normalizedCandidates.some(
+      (c) => c.maxTokens != null || (c.concurrency <= 4 && c.batch === 1)
+    );
+  }, [normalizedCandidates]);
+
   // 3. Map candidates to the 4 Quadrants
   // Dimensions for SVG viewBox="0 0 760 440"
   const quadrants: QuadrantSlot[] = useMemo(() => {
     // Quadrant layout definitions
-    const layout = [
-      // Top-Left: Batch 4, Concurrency 16
-      { col: 0 as const, row: 1 as const, concurrencyLabel: '16 streams', batchLabel: 'Batch 4', tokensLabel: '2048 batched tokens', boxX: 100, boxY: 65, width: 285, height: 135, cx: 242, cy: 132 },
-      // Top-Right: Batch 4, Concurrency 32
-      { col: 1 as const, row: 1 as const, concurrencyLabel: '32 streams', batchLabel: 'Batch 4', tokensLabel: '2048 batched tokens', boxX: 415, boxY: 65, width: 285, height: 135, cx: 557, cy: 132 },
-      // Bottom-Left: Batch 1, Concurrency 16
-      { col: 0 as const, row: 0 as const, concurrencyLabel: '16 streams', batchLabel: 'Batch 1', tokensLabel: '512 batched tokens', boxX: 100, boxY: 230, width: 285, height: 135, cx: 242, cy: 297 },
-      // Bottom-Right: Batch 1, Concurrency 32
-      { col: 1 as const, row: 0 as const, concurrencyLabel: '32 streams', batchLabel: 'Batch 1', tokensLabel: '512 batched tokens', boxX: 415, boxY: 230, width: 285, height: 135, cx: 557, cy: 297 },
-    ];
+    const layout = isClientLoadgen
+      ? [
+          // Top-Left: High Tokens (128), Low Concurrency (1)
+          { col: 0 as const, row: 1 as const, concurrencyLabel: '1 stream', batchLabel: 'Tokens 128', tokensLabel: '128 max tokens', boxX: 100, boxY: 65, width: 285, height: 135, cx: 242, cy: 132 },
+          // Top-Right: High Tokens (128), High Concurrency (2)
+          { col: 1 as const, row: 1 as const, concurrencyLabel: '2 streams', batchLabel: 'Tokens 128', tokensLabel: '128 max tokens', boxX: 415, boxY: 65, width: 285, height: 135, cx: 557, cy: 132 },
+          // Bottom-Left: Low Tokens (32), Low Concurrency (1)
+          { col: 0 as const, row: 0 as const, concurrencyLabel: '1 stream', batchLabel: 'Tokens 32', tokensLabel: '32 max tokens', boxX: 100, boxY: 230, width: 285, height: 135, cx: 242, cy: 297 },
+          // Bottom-Right: Low Tokens (32), High Concurrency (2)
+          { col: 1 as const, row: 0 as const, concurrencyLabel: '2 streams', batchLabel: 'Tokens 32', tokensLabel: '32 max tokens', boxX: 415, boxY: 230, width: 285, height: 135, cx: 557, cy: 297 },
+        ]
+      : [
+          // Top-Left: Batch 4, Concurrency 16
+          { col: 0 as const, row: 1 as const, concurrencyLabel: '16 streams', batchLabel: 'Batch 4', tokensLabel: '2048 batched tokens', boxX: 100, boxY: 65, width: 285, height: 135, cx: 242, cy: 132 },
+          // Top-Right: Batch 4, Concurrency 32
+          { col: 1 as const, row: 1 as const, concurrencyLabel: '32 streams', batchLabel: 'Batch 4', tokensLabel: '2048 batched tokens', boxX: 415, boxY: 65, width: 285, height: 135, cx: 557, cy: 132 },
+          // Bottom-Left: Batch 1, Concurrency 16
+          { col: 0 as const, row: 0 as const, concurrencyLabel: '16 streams', batchLabel: 'Batch 1', tokensLabel: '512 batched tokens', boxX: 100, boxY: 230, width: 285, height: 135, cx: 242, cy: 297 },
+          // Bottom-Right: Batch 1, Concurrency 32
+          { col: 1 as const, row: 0 as const, concurrencyLabel: '32 streams', batchLabel: 'Batch 1', tokensLabel: '512 batched tokens', boxX: 415, boxY: 230, width: 285, height: 135, cx: 557, cy: 297 },
+        ];
 
     return layout.map((q) => {
       // Find matching candidates for this quadrant
       const matching = normalizedCandidates.filter((c) => {
+        if (isClientLoadgen) {
+          const matchesCol = q.col === 0 ? c.concurrency <= 1 : c.concurrency > 1;
+          const matchesRow = q.row === 0
+            ? (c.maxTokens != null ? c.maxTokens <= 64 : c.batch <= 2)
+            : (c.maxTokens != null ? c.maxTokens > 64 : c.batch > 2);
+          return matchesCol && matchesRow;
+        }
         const matchesCol = q.col === 0 ? c.concurrency <= 24 : c.concurrency > 24;
         const matchesRow = q.row === 0 ? c.batch <= 2 : c.batch > 2;
         return matchesCol && matchesRow;
@@ -169,7 +208,7 @@ export const ParameterMatrixDiagram: React.FC<ParameterMatrixDiagramProps> = ({
         candidate: cand,
       };
     });
-  }, [normalizedCandidates, selectedCandidateId]);
+  }, [normalizedCandidates, selectedCandidateId, isClientLoadgen]);
 
   // 4. Calculate Pareto frontier curve path
   const paretoPoints = useMemo(() => {
@@ -344,34 +383,34 @@ export const ParameterMatrixDiagram: React.FC<ParameterMatrixDiagramProps> = ({
           letterSpacing="0.08em"
           textAnchor="middle"
         >
-          BATCH SIZE (TOKENS) ↑
+          {isClientLoadgen ? 'MAX OUTPUT TOKENS ↑' : 'BATCH SIZE (TOKENS) ↑'}
         </text>
 
         {/* Y-Axis Row Ticks */}
         <text x="75" y="136" fill="var(--text-primary, #F0F3EF)" fontSize="11px" fontWeight="600" textAnchor="end">
-          Batch 4
+          {isClientLoadgen ? '128 tok' : 'Batch 4'}
         </text>
         <text x="75" y="150" fill="var(--text-muted, #727D73)" fontSize="11px" textAnchor="end">
-          (2048 tok)
+          {isClientLoadgen ? '(Max Tokens)' : '(2048 tok)'}
         </text>
 
         <text x="75" y="301" fill="var(--text-primary, #F0F3EF)" fontSize="11px" fontWeight="600" textAnchor="end">
-          Batch 1
+          {isClientLoadgen ? '32 tok' : 'Batch 1'}
         </text>
         <text x="75" y="315" fill="var(--text-muted, #727D73)" fontSize="11px" textAnchor="end">
-          (512 tok)
+          {isClientLoadgen ? '(Max Tokens)' : '(512 tok)'}
         </text>
 
         {/* X-Axis Column Ticks */}
         <text x="242" y="398" fill="var(--text-primary, #F0F3EF)" fontSize="11px" fontWeight="600" textAnchor="middle">
-          16 streams
+          {isClientLoadgen ? '1 stream' : '16 streams'}
         </text>
         <text x="242" y="412" fill="var(--text-muted, #727D73)" fontSize="11px" textAnchor="middle">
           (Low Concurrency)
         </text>
 
         <text x="557" y="398" fill="var(--text-primary, #F0F3EF)" fontSize="11px" fontWeight="600" textAnchor="middle">
-          32 streams
+          {isClientLoadgen ? '2 streams' : '32 streams'}
         </text>
         <text x="557" y="412" fill="var(--text-muted, #727D73)" fontSize="11px" textAnchor="middle">
           (High Concurrency)
@@ -379,7 +418,7 @@ export const ParameterMatrixDiagram: React.FC<ParameterMatrixDiagramProps> = ({
 
         {/* X-Axis Label: Concurrency */}
         <text x="400" y="432" fill="var(--text-secondary, #A0AAA0)" fontSize="11px" fontWeight="700" letterSpacing="0.08em" textAnchor="middle">
-          MAX CONCURRENCY (STREAMS) →
+          {isClientLoadgen ? 'CLIENT CONCURRENCY (STREAMS) →' : 'MAX CONCURRENCY (STREAMS) →'}
         </text>
 
         {/* Pareto Frontier Curve Layer (Underneath nodes) */}
@@ -553,7 +592,9 @@ export const ParameterMatrixDiagram: React.FC<ParameterMatrixDiagramProps> = ({
 
               {/* Sub-label: Configuration Profile */}
               <text x="14" y="42" fill="var(--text-muted, #727D73)" fontSize="11px">
-                {`batch=${c.batch} (${c.batch * 512}t) · conc=${c.concurrency}${c.isConfigMapped === false ? ' (est)' : ''}`}
+                {c.maxTokens != null
+                  ? `max_tokens=${c.maxTokens} · conc=${c.concurrency}`
+                  : `batch=${c.batch} (${c.batch * 512}t) · conc=${c.concurrency}${c.isConfigMapped === false ? ' (est)' : ''}`}
               </text>
 
               {/* Hairline Separator */}

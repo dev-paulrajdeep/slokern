@@ -32,7 +32,11 @@ export const TuningLabView: React.FC<TuningLabViewProps> = ({
   const [topologyView, setTopologyView] = useState<'matrix' | 'tradeoff' | 'both'>('both');
 
   const { paretoIds } = React.useMemo(() => identifyParetoFrontier(candidates), [candidates]);
-  const selectedCandidate = candidates.find((c) => c.id === selectedCandidateId) || candidates.find((c) => c.feasible) || candidates[0];
+  const selectedCandidate =
+    candidates.find((c) => c.id === selectedCandidateId) ||
+    candidates.find((c) => c.tag === 'WINNER' && c.feasible) ||
+    candidates.find((c) => c.feasible) ||
+    candidates[0];
   const hasFeasibleCandidate = candidates.some((candidate) => candidate.feasible);
 
   const handleCopyCliFlags = () => {

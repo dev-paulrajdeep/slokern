@@ -39,6 +39,8 @@ Thumbs.db
 # Generated and local artifacts
 artifacts/
 *.log
+logs/
+.slokern/
 
 # Local test and coverage outputs
 htmlcov/

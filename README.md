@@ -322,8 +322,30 @@ SLOKern enforces strict cost accounting boundaries to prevent fabricated claims:
 - **Local LLM (Optional for offline mode):** Ollama installed and running on loopback (`http://127.0.0.1:11434`) with `qwen3:4b-instruct-2507-q4_K_M`.
 - **Nebius Cloud Credentials (For live GPU execution):** `NEBIUS_API_KEY` with access to Nebius Token Factory or Nebius AI Cloud.
 
-### 11.2 Installation & Environment Setup
+### 11.2 Turnkey One-Command Installation (Recommended)
 
+SLOKern provides a single-command cross-platform bootstrap script that automatically audits prerequisites, provisions `.venv`, installs the backend in editable mode, builds the frontend dashboard, safely configures `.env`, and detects hardware capabilities:
+
+```powershell
+# On Windows (PowerShell 5.1+ / 7+):
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
+
+# Check-only diagnostic dry run (modifies zero files):
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 --check-only
+```
+
+```bash
+# On Linux / POSIX (bash 4+):
+chmod +x scripts/*.sh
+./scripts/setup.sh
+
+# Check-only diagnostic dry run:
+./scripts/setup.sh --check-only
+```
+
+*(For in-depth platform compatibility matrices, macOS status, non-interactive flags, and troubleshooting, see **[docs/installation.md](docs/installation.md)**).*
+
+#### Alternative: Manual Developer Setup
 ```bash
 # 1. Clone repository
 git clone https://github.com/slokern/slokern.git
@@ -331,18 +353,29 @@ cd slokern
 
 # 2. Create and activate Python 3.11 virtual environment
 python -m venv .venv
-# On Linux/macOS:
-source .venv/bin/activate
-# On Windows (PowerShell):
-.venv\Scripts\Activate.ps1
+source .venv/bin/activate        # Linux/macOS
+.venv\Scripts\Activate.ps1       # Windows PowerShell
 
-# 3. Install slokern in editable mode with development/test dependencies
+# 3. Install backend in editable mode with dev dependencies
 pip install -e ".[dev]"
 
-# 4. Set up frontend dependencies
-cd frontend
-npm ci
-cd ..
+# 4. Install and build frontend dashboard
+cd frontend && npm ci && npm run build && cd ..
+
+# 5. Create environment configuration
+cp .env.example .env
+```
+
+### 11.3 Independent Diagnostic Doctor (`scripts/doctor.py`)
+
+Verify host readiness and environment health with the read-only diagnostic tool (audits 22 discrete environmental and port metrics without modifying state):
+
+```bash
+# Run read-only health and readiness inspection
+python scripts/doctor.py
+
+# Machine-readable JSON output for automated CI pipelines
+python scripts/doctor.py --json
 ```
 
 ### 11.3 Credential Configuration for Nebius Cloud
@@ -413,10 +446,25 @@ slokern optimize fixtures/workloads/spec_reference.json --adapter nebius --outpu
 slokern verify fixtures/workloads/spec_reference.json artifacts/nebius-campaign/search_result.json --adapter nebius
 ```
 
-### 11.5 Launching the Dual-Runtime Command Center
+### 11.6 Service Lifecycle Management & Command Center
 
-Experience the interactive cyberpunk command center connecting the Python control plane with the React + Vite dashboard:
+Launch and manage both the Python API control plane (port 8001) and the React + Vite dashboard (port 5173) as tracked background services:
 
+```powershell
+# On Windows:
+.\scripts\start.ps1              # Starts services, verifies health, opens browser
+.\scripts\start.ps1 -NoBrowser   # Headless server mode
+.\scripts\stop.ps1               # Cleanly stops tracked background services
+```
+
+```bash
+# On Linux / POSIX:
+./scripts/start.sh               # Starts services, verifies health, opens browser
+./scripts/start.sh --no-browser  # Headless server mode
+./scripts/stop.sh                # Cleanly stops tracked background services
+```
+
+#### Manual Foreground Execution (Optional)
 ```bash
 # Terminal 1: Launch Python API Control Plane (http://127.0.0.1:8001)
 slokern serve --host 127.0.0.1 --port 8001 --artifacts-dir artifacts
@@ -505,6 +553,7 @@ For the complete responsibility matrix, governance model, and daily rituals, see
 
 ## 16. Related Documentation & In-Depth Guides
 
+- [Installation & Environment Bootstrap Guide](docs/installation.md)
 - [Architecture & Contract Specification](docs/architecture.md)
 - [Single-Owner Execution & Responsibility Matrix](docs/ownership.md)
 - [Architecture Decision Log](docs/decision-log.md)

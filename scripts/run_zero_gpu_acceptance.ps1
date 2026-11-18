@@ -1,17 +1,29 @@
 ﻿$ErrorActionPreference = "Stop"
 
-Write-Host "[Zero-GPU Acceptance] Starting SLOKern API on port 8001..."
-$apiProcess = Start-Process -FilePath ".\.venv\Scripts\python.exe" -ArgumentList "-m slokern.cli.main serve --port 8001" -PassThru
+$env:NO_PROXY = "127.0.0.1,localhost"
+$env:no_proxy = "127.0.0.1,localhost"
+$env:HTTP_PROXY = ""
+$env:http_proxy = ""
+$env:HTTPS_PROXY = ""
+$env:https_proxy = ""
+[System.Net.WebRequest]::DefaultWebProxy = $null
+
+$rootDir = Split-Path -Parent $PSScriptRoot
+if (-not $rootDir) { $rootDir = (Get-Location).Path }
+$pythonPath = Join-Path $rootDir ".venv\Scripts\python.exe"
+
+Write-Host "[Zero-GPU Acceptance] Starting SLOKern API on port 8001 using $pythonPath..."
+$apiProcess = Start-Process -FilePath $pythonPath -ArgumentList "-m slokern.cli.main serve --port 8001" -WorkingDirectory $rootDir -PassThru -RedirectStandardError "$rootDir\api_err.log" -RedirectStandardOutput "$rootDir\api_out.log"
 
 Write-Host "[Zero-GPU Acceptance] Starting Vite dev server on port 5173..."
-$viteProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd /d frontend && npx vite --port 5173 --host 127.0.0.1" -PassThru
+$viteProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd /d frontend && npx vite --port 5173 --host 127.0.0.1" -WorkingDirectory $rootDir -PassThru -RedirectStandardError "$rootDir\vite_err.log" -RedirectStandardOutput "$rootDir\vite_out.log"
 
 try {
     # Wait for API to respond
     $apiReady = $false
-    for ($i = 0; $i -lt 40; $i++) {
+    for ($i = 0; $i -lt 30; $i++) {
         try {
-            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8001/api/health" -UseBasicParsing -TimeoutSec 1
+            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8001/api/health" -UseBasicParsing -TimeoutSec 10
             if ($resp.StatusCode -eq 200) {
                 $apiReady = $true
                 break
@@ -21,15 +33,19 @@ try {
         }
     }
     if (-not $apiReady) {
+        Write-Host "--- API ERROR LOG ---"
+        if (Test-Path "$rootDir\api_err.log") { Get-Content "$rootDir\api_err.log" | Write-Host }
+        Write-Host "--- API OUT LOG ---"
+        if (Test-Path "$rootDir\api_out.log") { Get-Content "$rootDir\api_out.log" | Write-Host }
         throw "SLOKern API failed to become ready on port 8001"
     }
     Write-Host "  ✓ API is responsive on http://127.0.0.1:8001"
 
     # Wait for Vite dev server to respond
     $viteReady = $false
-    for ($i = 0; $i -lt 40; $i++) {
+    for ($i = 0; $i -lt 30; $i++) {
         try {
-            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:5173" -UseBasicParsing -TimeoutSec 1
+            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:5173" -UseBasicParsing -TimeoutSec 5
             if ($resp.StatusCode -eq 200) {
                 $viteReady = $true
                 break

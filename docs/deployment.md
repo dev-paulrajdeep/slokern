@@ -23,9 +23,13 @@
 - **Serving Limitation:** Nebius Token Factory does not expose runtime vLLM scheduler startup controls (`max_num_seqs`, `gpu_memory_utilization`). Controls are marked unsupported in runtime profile.
 - **Evidence Classification:** `LIVE` (Single probe; distinct from full benchmark baseline).
 
-### Dual-Runtime Local Operation
-- **Backend API Server:** `python src/slokern/api/app.py 127.0.0.1 8001`
-- **Frontend Command Center:** `npm run dev --prefix frontend` (Vite on `http://127.0.0.1:5173`)
+### Dual-Runtime Local Operation & Service Lifecycle
+- **One-Command Bootstrap:** Run `.\scripts\setup.ps1` (Windows) or `./scripts/setup.sh` (Linux) to automatically establish the virtual environment, compile the frontend, and configure `.env`. See [docs/installation.md](installation.md) for full details.
+- **Tracked Service Startup:** Run `.\scripts\start.ps1` (Windows) or `./scripts/start.sh` (Linux) to launch both services in the background:
+  - **Backend API Control Plane:** Running on `http://127.0.0.1:8001` (PID tracked in `.slokern/pids/backend.pid`, logs in `logs/backend.log`). Decoupled from port 8000 to eliminate port collisions with vLLM.
+  - **Frontend Command Center:** React + Vite on `http://127.0.0.1:5173` (PID tracked in `.slokern/pids/frontend.pid`, logs in `logs/frontend.log`).
+- **Safe Service Shutdown:** Run `.\scripts\stop.ps1` (Windows) or `./scripts/stop.sh` (Linux) to cleanly terminate only recorded SLOKern service PIDs after validating process identity.
+- **Read-Only Environmental Diagnostics:** Run `python scripts/doctor.py` (or `--json`) to independently audit 22 system, port, hardware, and service health checks without modifying state.
 - **Screenshots:** 7 full-resolution (1920×1080) screenshots captured in `artifacts/screenshots/`.
 
 

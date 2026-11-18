@@ -126,6 +126,18 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
     format: (value: number) => `${formatNumber(value, 2)} ${comparison.unit}`,
   }));
 
+  const effectiveCandidateId = verificationRecord?.candidate_id || recommendedCandidate.id;
+  const effectiveCandidateName = verificationRecord?.candidate_id
+    ? (verificationRecord.candidate_id === recommendedCandidate.id
+        ? recommendedCandidate.name
+        : `Candidate ${verificationRecord.candidate_id.slice(0, 8)}`)
+    : recommendedCandidate.name;
+  const effectiveThroughput =
+    verificationRecord?.metric_set?.token_throughput_tps ??
+    verificationRecord?.drift_analysis?.metric_comparisons?.['token_throughput_tps']?.reference_value ??
+    verificationRecord?.drift_analysis?.metric_comparisons?.['token_throughput_tps_mean']?.reference_value ??
+    recommendedCandidate.throughput;
+
   const handleDownloadTrace = async () => {
     setDownloading(true);
     try {
@@ -220,7 +232,7 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
               {verificationLabel}
             </Badge>
             <span style={{ fontSize: '14px', fontWeight: 650, color: 'var(--text-primary, #F0F3EF)' }}>
-              Candidate: {recommendedCandidate.id} · {recommendedCandidate.name}
+              Candidate: {effectiveCandidateId} · {effectiveCandidateName}
             </span>
           </div>
 
@@ -236,7 +248,7 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
             <div style={{ color: 'var(--text-muted, #727D73)', fontSize: '11px', marginBottom: '4px' }}>ORIGINAL SEARCH RUN ID</div>
             <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)' }}>{searchRunId}</div>
             <div style={{ color: 'var(--text-secondary, #A0AAA0)', fontSize: '11px', marginTop: '4px' }}>
-              Completed in campaign · Candidate: {recommendedCandidate.id} ({formatNumber(recommendedCandidate.throughput, 1)} tok/s)
+              Completed in campaign · Candidate: {effectiveCandidateId} ({formatNumber(effectiveThroughput, 1)} tok/s)
             </div>
           </div>
 
@@ -268,8 +280,8 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
         searchRunId={searchRunId}
         verifRunId={verificationRunId}
         driftSummary={availableMetrics}
-        candidateId={recommendedCandidate.id}
-        candidateName={recommendedCandidate.name}
+        candidateId={effectiveCandidateId}
+        candidateName={effectiveCandidateName}
         appliedParams={{
           batch: recommendedCandidate.batch,
           concurrency: recommendedCandidate.concurrency,

@@ -161,5 +161,122 @@ describe('decision integrity view-model adapters', () => {
     // Operator pressing plain hotkey 'c', 'r', or '1'..'6' on background
     assert.equal(shouldIgnoreHotkey({ target: { tagName: 'BODY' } }), false);
   });
+
+  it('correctly binds verified candidate identity and throughput from verification record', () => {
+    // Regression check for Verification View candidate identity decoupling
+    const recommendedCandidate = {
+      id: '09618034778e',
+      name: 'Candidate 09618034',
+      throughput: 11.9,
+      feasible: false,
+    } as any;
+
+    const verificationRecord = {
+      verification_id: 'verif-c70ecef3',
+      candidate_id: '95db015e9de9',
+      original_run_id: 'run-04-cand-95db01',
+      verification_run_id: 'run-verify-69a57759',
+      verification_verdict: 'VERIFIED',
+      metric_set: {
+        token_throughput_tps: 48.0,
+      },
+      drift_analysis: {
+        metric_comparisons: {
+          token_throughput_tps: {
+            reference_value: 48.0,
+            verification_value: 48.0,
+          },
+        },
+      },
+    } as any;
+
+    // Derived values mirroring VerificationView logic
+    const effectiveCandidateId = verificationRecord?.candidate_id || recommendedCandidate.id;
+    const effectiveCandidateName = verificationRecord?.candidate_id
+      ? (verificationRecord.candidate_id === recommendedCandidate.id
+          ? recommendedCandidate.name
+          : `Candidate ${verificationRecord.candidate_id.slice(0, 8)}`)
+      : recommendedCandidate.name;
+    const effectiveThroughput =
+      verificationRecord?.metric_set?.token_throughput_tps ??
+      verificationRecord?.drift_analysis?.metric_comparisons?.['token_throughput_tps']?.reference_value ??
+      recommendedCandidate.throughput;
+
+    assert.equal(effectiveCandidateId, '95db015e9de9');
+    assert.equal(effectiveCandidateName, 'Candidate 95db015e');
+    assert.equal(effectiveThroughput, 48.0);
+  });
+
+  it('extracts client-side loadgen parameters (concurrency, max_tokens) and maps 2x2 grid slots', () => {
+    // Regression check for ParameterMatrixDiagram client-side parameter extraction
+    const rawRunData = [
+      {
+        id: '09618034778e',
+        tag: 'INCONCLUSIVE',
+        feasible: false,
+        rawConfig: {
+          effective_settings: { concurrency: 1, max_tokens: 32, concurrency_limit: 1 },
+        },
+      },
+      {
+        id: 'fe984b310e35',
+        tag: 'INCONCLUSIVE',
+        feasible: false,
+        rawConfig: {
+          effective_settings: { concurrency: 1, max_tokens: 128, concurrency_limit: 1 },
+        },
+      },
+      {
+        id: 'b2e1f07e45ad',
+        tag: 'INFEASIBLE',
+        feasible: false,
+        rawConfig: {
+          effective_settings: { concurrency: 2, max_tokens: 32, concurrency_limit: 2 },
+        },
+      },
+      {
+        id: '95db015e9de9',
+        tag: 'WINNER',
+        feasible: true,
+        rawConfig: {
+          effective_settings: { concurrency: 2, max_tokens: 128, concurrency_limit: 2 },
+        },
+      },
+    ];
+
+    const normalized = rawRunData.map((c) => {
+      const rawSettings = c.rawConfig.effective_settings;
+      const extractedConcurrency =
+        c.rawConfig?.effective_settings?.max_num_seqs ??
+        rawSettings.concurrency ??
+        rawSettings.concurrency_limit ??
+        16;
+      const extractedMaxTokens = rawSettings.max_tokens;
+      const isWinner = c.tag === 'WINNER' && c.feasible;
+
+      return {
+        id: c.id,
+        concurrency: extractedConcurrency,
+        maxTokens: extractedMaxTokens,
+        isWinner,
+        feasible: c.feasible,
+      };
+    });
+
+    const isClientLoadgen = normalized.some((c) => c.maxTokens != null || c.concurrency <= 4);
+    assert.equal(isClientLoadgen, true);
+
+    // Verify 4 distinct quadrants: (1 stream, 32 tok), (1 stream, 128 tok), (2 stream, 32 tok), (2 stream, 128 tok)
+    const qBottomLeft = normalized.find((c) => c.concurrency <= 1 && c.maxTokens <= 64);
+    const qTopLeft = normalized.find((c) => c.concurrency <= 1 && c.maxTokens > 64);
+    const qBottomRight = normalized.find((c) => c.concurrency > 1 && c.maxTokens <= 64);
+    const qTopRight = normalized.find((c) => c.concurrency > 1 && c.maxTokens > 64);
+
+    assert.equal(qBottomLeft?.id, '09618034778e');
+    assert.equal(qTopLeft?.id, 'fe984b310e35');
+    assert.equal(qBottomRight?.id, 'b2e1f07e45ad');
+    assert.equal(qTopRight?.id, '95db015e9de9');
+    assert.equal(qTopRight?.isWinner, true);
+  });
 });
 

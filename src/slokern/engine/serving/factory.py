@@ -11,6 +11,7 @@ from slokern.engine.serving.base import BaseServingAdapter, ConfigurationError
 from slokern.engine.serving.fake import FakeServingAdapter
 from slokern.engine.serving.nebius import NebiusServingAdapter
 from slokern.engine.serving.ollama import OllamaServingAdapter
+from slokern.engine.serving.vllm import VLLMServingAdapter
 
 
 def create_serving_adapter(
@@ -33,7 +34,14 @@ def create_serving_adapter(
 
     normalized = resolved_backend.strip().lower()
 
-    if normalized in ("local", "ollama"):
+    if normalized in ("vllm", "local-vllm"):
+        vllm_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in ("model_name", "runtime_name", "base_url", "timeout_s", "allow_remote", "scrape_prometheus", "capabilities")
+        }
+        return VLLMServingAdapter(**vllm_kwargs)
+
+    elif normalized in ("local", "ollama"):
         local_kwargs = {
             k: v for k, v in kwargs.items()
             if k in ("model_name", "runtime_name", "base_url", "timeout_s", "allow_remote", "capabilities")
@@ -72,5 +80,5 @@ def create_serving_adapter(
 
     else:
         raise ValueError(
-            f"Unknown serving backend '{resolved_backend}'. Valid backends are: 'local', 'nebius', 'fake'."
+            f"Unknown serving backend '{resolved_backend}'. Valid backends are: 'vllm', 'local', 'nebius', 'fake'."
         )

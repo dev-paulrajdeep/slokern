@@ -26,9 +26,9 @@ def sanitize_secret_message(message: str, secret_key: Optional[str] = None) -> s
         sanitized,
         flags=re.IGNORECASE,
     )
-    # Mask API key patterns
+    # Mask API key patterns (supports both raw CLI/config strings and JSON-quoted keys)
     sanitized = re.sub(
-        r"((?:api[_-]?key|token|secret|password)\s*[:=]\s*['\"]?)[A-Za-z0-9_\-\.\~\+\/\=%]{6,}(['\"]?)",
+        r"(['\"]?(?:api[_-]?key|token|secret|password)['\"]?\s*[:=]\s*['\"]?)[A-Za-z0-9_\-\.\~\+\/\=%]{6,}(['\"]?)",
         r"\g<1>***REDACTED***\g<2>",
         sanitized,
         flags=re.IGNORECASE,

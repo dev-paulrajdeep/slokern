@@ -407,8 +407,22 @@ class SingleRunExecutor:
             if cancellation_token and cancellation_token.is_cancelled:
                 raise RunCancelledError("Cancelled before load generation dispatch.")
 
+            # Propagate candidate-effective settings (concurrency, max_tokens) to workload
+            effective_workload = workload
+            workload_updates = {}
+            if applied_config and applied_config.effective_settings:
+                eff = applied_config.effective_settings
+                cand_concurrency = eff.get("concurrency") or eff.get("concurrency_limit")
+                if cand_concurrency is not None:
+                    workload_updates["concurrency_limit"] = int(cand_concurrency)
+                cand_max_tokens = eff.get("max_tokens") or eff.get("max_output_tokens")
+                if cand_max_tokens is not None:
+                    workload_updates["max_output_tokens"] = int(cand_max_tokens)
+            if workload_updates:
+                effective_workload = workload.model_copy(update=workload_updates)
+
             loadgen_result = runner.run(
-                workload=workload,
+                workload=effective_workload,
                 adapter=effective_adapter,
                 output_path=raw_path,
                 run_id=resolved_run_id,

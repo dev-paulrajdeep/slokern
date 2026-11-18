@@ -241,7 +241,11 @@ def dispatch_single_run(
     }
 
 
-def get_run_status(run_id: str, artifacts_root: str = "artifacts") -> Dict[str, Any]:
+def get_run_status(
+    run_id: str,
+    artifacts_root: str = "artifacts",
+    run_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
     with RUNS_LOCK:
         if run_id in ACTIVE_RUNS:
             return ACTIVE_RUNS[run_id]
@@ -249,16 +253,19 @@ def get_run_status(run_id: str, artifacts_root: str = "artifacts") -> Dict[str, 
     if not re.match(r"^[a-zA-Z0-9_\-]+$", run_id):
         return {"run_id": run_id, "error": f"Invalid run_id format: {run_id}"}
 
-    # Check filesystem: check direct runs/ and deep subdirectories
-    run_dir = Path(artifacts_root) / "runs" / run_id
-    if not (run_dir / "run_record.json").exists():
-        matches = list(Path(artifacts_root).glob(f"**/runs/{run_id}"))
-        for m in matches:
-            if (m / "run_record.json").exists():
-                run_dir = m
-                break
+    # Check filesystem: prefer explicit run_dir, then direct runs/, then deep subdirectories
+    if run_dir:
+        resolved_dir = Path(run_dir)
+    else:
+        resolved_dir = Path(artifacts_root) / "runs" / run_id
+        if not (resolved_dir / "run_record.json").exists():
+            matches = list(Path(artifacts_root).glob(f"**/runs/{run_id}"))
+            for m in matches:
+                if (m / "run_record.json").exists():
+                    resolved_dir = m
+                    break
 
-    rec_file = run_dir / "run_record.json"
+    rec_file = resolved_dir / "run_record.json"
     if rec_file.exists():
         try:
             rec = RunRecord.model_validate_json(rec_file.read_text(encoding="utf-8"))
@@ -266,7 +273,7 @@ def get_run_status(run_id: str, artifacts_root: str = "artifacts") -> Dict[str, 
             metric_set = None
             met_file_resolved = ""
             for met_name in ("metrics.json", "metric_set.json"):
-                mf = run_dir / met_name
+                mf = resolved_dir / met_name
                 if mf.exists():
                     try:
                         metric_set = json.loads(mf.read_text(encoding="utf-8"))
@@ -277,7 +284,7 @@ def get_run_status(run_id: str, artifacts_root: str = "artifacts") -> Dict[str, 
 
             feas_result = None
             for feas_name in ("feasibility.json", "feasibility_result.json"):
-                ff = run_dir / feas_name
+                ff = resolved_dir / feas_name
                 if ff.exists():
                     try:
                         feas_result = json.loads(ff.read_text(encoding="utf-8"))
@@ -288,7 +295,7 @@ def get_run_status(run_id: str, artifacts_root: str = "artifacts") -> Dict[str, 
             raw_count = 0
             raw_file_resolved = ""
             for raw_name in ("raw_measurements.jsonl", "measurements.jsonl"):
-                rf = run_dir / raw_name
+                rf = resolved_dir / raw_name
                 if rf.exists():
                     raw_file_resolved = str(rf)
                     try:
@@ -304,7 +311,7 @@ def get_run_status(run_id: str, artifacts_root: str = "artifacts") -> Dict[str, 
             )
 
             applied_cfg = None
-            ac_file = run_dir / "applied_config.json"
+            ac_file = resolved_dir / "applied_config.json"
             if ac_file.exists():
                 try:
                     applied_cfg = json.loads(ac_file.read_text(encoding="utf-8"))

@@ -42,18 +42,23 @@ export function runWithViewTransition(updateDom: () => void | Promise<void>): Pr
     return Promise.resolve();
   }
 
-  // If user requests reduced motion, bypass transitions immediately
+  // If user requests reduced motion or running in headless browser, bypass transitions immediately
   const prefersReduced = typeof window !== 'undefined' &&
     window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const isHeadless = typeof navigator !== 'undefined' && (
+    /Headless/i.test(navigator.userAgent) ||
+    navigator.webdriver === true ||
+    Boolean((window as any).__PUPPETEER_TEST__)
+  );
 
   const doc = document as Document & {
     startViewTransition?: (cb: () => void | Promise<void>) => { finished: Promise<void> };
   };
 
-  if (!prefersReduced && typeof doc.startViewTransition === 'function') {
+  if (!prefersReduced && !isHeadless && typeof doc.startViewTransition === 'function') {
     try {
-      return doc.startViewTransition(updateDom).finished;
+      return doc.startViewTransition(updateDom).finished.catch(() => {});
     } catch {
       updateDom();
       return Promise.resolve();

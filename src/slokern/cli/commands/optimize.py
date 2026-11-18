@@ -4,6 +4,7 @@ Owner: Rajdeep (Historical design: Rohan)
 Authority: Aligned with AGENTS.md Section 1, 3, 5, 6 and DEC-0014
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -59,8 +60,9 @@ def optimize_command(
             return 1
 
     # Instantiate serving adapter
+    resolved_adapter = adapter or os.environ.get("SLOKERN_ADAPTER", "vllm")
     try:
-        serving_adapter = create_serving_adapter(backend=adapter)
+        serving_adapter = create_serving_adapter(backend=resolved_adapter)
     except ConfigurationError as exc:
         print(f"[ERROR] Serving adapter configuration failed: {exc}", file=sys.stderr)
         return 1

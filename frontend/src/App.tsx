@@ -27,6 +27,7 @@ import type {
   RuntimeProfileResponse,
   ReportSummaryResponse,
   ReportArtifact,
+  WorkloadSpec,
 } from './types/contracts';
 import {
   checkHealth,
@@ -51,7 +52,13 @@ export function App() {
   const [runtimeProfile, setRuntimeProfile] = useState<RuntimeProfileResponse | null>(null);
   const [smokeTest, setSmokeTest] = useState<SmokeTestArtifactResponse | null>(null);
   const [experimentsList, setExperimentsList] = useState<UIExperiment[]>([]);
-  const [activeExperimentId, setActiveExperimentId] = useState<string>('exp-audit-offline-campaign');
+  const [activeExperimentId, setActiveExperimentId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const expParam = new URLSearchParams(window.location.search).get('exp');
+      if (expParam) return expParam;
+    }
+    return 'exp-audit-offline-campaign';
+  });
   const [apiCandidates, setApiCandidates] = useState<UICandidate[]>([]);
   const [verificationRecord, setVerificationRecord] = useState<VerificationRecord | null>(null);
   const [reportData, setReportData] = useState<{
@@ -66,6 +73,8 @@ export function App() {
   const [inspectExperiment, setInspectExperiment] = useState<UIExperiment | null>(null);
   const [isRuntimeModalOpen, setIsRuntimeModalOpen] = useState(false);
   const [isCampaignDrawerOpen, setIsCampaignDrawerOpen] = useState(false);
+  const [prepopulatedWorkload, setPrepopulatedWorkload] = useState<WorkloadSpec | null>(null);
+  const [prepopulatedSLO, setPrepopulatedSLO] = useState<any>(null);
   const [isShortcutsHudOpen, setIsShortcutsHudOpen] = useState(false);
   const [toastNotification, setToastNotification] = useState<string | null>(null);
 
@@ -104,9 +113,7 @@ export function App() {
   // Fluid View-Transition Navigators
   const navigateWorkspace = (dest: WorkspaceDestination) => {
     if (dest === currentWorkspace) return;
-    runWithViewTransition(() => {
-      setCurrentWorkspace(dest);
-    });
+    setCurrentWorkspace(dest);
   };
 
   const handleOpenCandidateDrawer = (candidate: UICandidate) => {
@@ -182,7 +189,8 @@ export function App() {
       .then((exps) => {
         if (exps && exps.length > 0) {
           setExperimentsList(exps);
-          const campaign = exps.find((e) => e.id === 'exp-audit-offline-campaign') || exps[0];
+          const urlExp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('exp') : null;
+          const campaign = (urlExp && exps.find((e) => e.id === urlExp)) || exps.find((e) => e.id === 'exp-audit-offline-campaign') || exps[0];
           setActiveExperimentId(campaign.id);
         }
       })
@@ -508,11 +516,11 @@ export function App() {
   const handleRunSmokeProbe = async () => {
     setIsProbing(true);
     try {
-      const res = await runSmokeProbe('vllm-nebius', 'SLOKern preflight smoke probe.');
+      const res = await runSmokeProbe('vllm', 'SLOKern preflight smoke test probe.');
       const ttft = res.first_token_latency_ms ?? res.total_latency_ms;
       setSmokeProbeResult(`Live Smoke Probe Success: ${res.output_tokens} tok in ${ttft.toFixed(1)}ms (${res.model}).`);
-    } catch {
-      setSmokeProbeResult('Live Smoke Test Verified: 813.8 ms TTFT · nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B');
+    } catch (err: any) {
+      setSmokeProbeResult(`Preflight Probe Failed: ${err?.message || 'Endpoint unreachable or connection refused'}`);
     } finally {
       setIsProbing(false);
       setTimeout(() => setSmokeProbeResult(null), 4000);
@@ -722,10 +730,13 @@ export function App() {
 
             {currentWorkspace === 'Workloads' && (
               <WorkloadsView
-                onLaunchBenchmark={() => {
-                  handleRunSmokeProbe();
+                onOpenCampaignDrawer={(workloadSpec, sloSpec) => {
+                  setPrepopulatedWorkload(workloadSpec);
+                  setPrepopulatedSLO(sloSpec);
+                  setIsCampaignDrawerOpen(true);
                 }}
-                isLaunching={isProbing}
+                onRunProbe={handleRunSmokeProbe}
+                isProbing={isProbing}
               />
             )}
 
@@ -870,7 +881,13 @@ export function App() {
       {/* Optimization Campaign Execution Drawer with SSE Progress Streaming */}
       <CampaignLaunchDrawer
         isOpen={isCampaignDrawerOpen}
-        onClose={() => setIsCampaignDrawerOpen(false)}
+        onClose={() => {
+          setIsCampaignDrawerOpen(false);
+          setPrepopulatedWorkload(null);
+          setPrepopulatedSLO(null);
+        }}
+        initialWorkload={prepopulatedWorkload}
+        initialSLO={prepopulatedSLO}
         onCampaignCompleted={(campaignId) => {
           triggerToast(`Campaign ${campaignId} completed!`);
           refreshData(campaignId);
@@ -958,7 +975,7 @@ export function App() {
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: 'var(--surface, #0E120F)', borderRadius: '4px' }}>
                 <span style={{ color: 'var(--text-secondary, #A0AAA0)' }}>Serving Adapter</span>
                 <span style={{ color: 'var(--primary-bright, #95D500)', fontWeight: 600 }}>
-                  {runtimeProfile?.adapter || 'vllm-nebius'} (OpenAI-compatible)
+                  {runtimeProfile?.adapter || 'vllm'} (OpenAI-compatible)
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: 'var(--surface, #0E120F)', borderRadius: '4px' }}>
@@ -970,7 +987,7 @@ export function App() {
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: 'var(--surface, #0E120F)', borderRadius: '4px' }}>
                 <span style={{ color: 'var(--text-secondary, #A0AAA0)' }}>Active Model Target</span>
                 <span style={{ color: 'var(--primary-bright, #95D500)', fontWeight: 600 }}>
-                  {runtimeProfile?.model || 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B'}
+                  {runtimeProfile?.model || 'slokern-qwen3-1.7b'}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: 'var(--surface, #0E120F)', borderRadius: '4px' }}>

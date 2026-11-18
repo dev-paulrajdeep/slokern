@@ -19,6 +19,7 @@ from .factory import create_serving_adapter
 from .fake import FailureInjectionConfig, FakeServingAdapter
 from .nebius import NebiusServingAdapter
 from .ollama import OllamaServingAdapter
+from .vllm import VLLMServingAdapter
 
 __all__ = [
     "ParameterSpec",
@@ -36,5 +37,6 @@ __all__ = [
     "FailureInjectionConfig",
     "NebiusServingAdapter",
     "OllamaServingAdapter",
+    "VLLMServingAdapter",
     "create_serving_adapter",
 ]

@@ -6,7 +6,7 @@
     and Ollama with qwen3:4b-instruct-2507-q4_K_M:
     1. Preflight health check (Ollama daemon & model presence)
     2. Streaming smoke-test probe
-    3. Background control plane HTTP API startup (127.0.0.1:8000)
+    3. Background control plane HTTP API startup (127.0.0.1:8001)
     4. 6-run optimization campaign with independent verification rerun
     5. Immutable report generation (JSON + Markdown)
     6. Launch Command Center dashboard
@@ -17,7 +17,7 @@ param(
     [string]$SpecPath = "experiments/configs/local_qwen3_benchmark.json",
     [string]$Model = "qwen3:4b-instruct-2507-q4_K_M",
     [string]$BaseUrl = "http://127.0.0.1:11434",
-    [int]$ApiPort = 8000,
+    [int]$ApiPort = 8001,
     [switch]$NoBrowser
 )
 

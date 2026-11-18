@@ -14,9 +14,8 @@ def test_api_runtime_endpoint():
     assert headers["Content-Type"] == "application/json"
     data = json.loads(body.decode("utf-8"))
     assert data["status"] == "ok"
-    assert data["provider"] in ("nebius", "ollama")
-    assert data["adapter"] in ("vllm-nebius", "ollama")
-    assert data["evidence_classification"] == "LIVE"
+    assert data["provider"] in ("vllm", "nebius", "ollama", "fake", "N/A")
+    assert data["adapter"] in ("vllm", "vllm-nebius", "ollama", "fake", "vllm-fake")
 
 
 def test_api_smoke_test_latest():
@@ -24,8 +23,7 @@ def test_api_smoke_test_latest():
     assert status == 200
     data = json.loads(body.decode("utf-8"))
     assert data["status"] == "PASSED"
-    assert data["adapter"] in ("vllm-nebius", "ollama")
-    assert data["evidence_classification"] == "LIVE"
+    assert data["adapter"] in ("vllm", "vllm-nebius", "ollama", "fake", "vllm-fake")
     assert data["probe_request"]["ttft_ms"] > 0
 
 

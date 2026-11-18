@@ -418,8 +418,8 @@ slokern verify fixtures/workloads/spec_reference.json artifacts/nebius-campaign/
 Experience the interactive cyberpunk command center connecting the Python control plane with the React + Vite dashboard:
 
 ```bash
-# Terminal 1: Launch Python API Control Plane (http://127.0.0.1:8000)
-slokern serve --host 127.0.0.1 --port 8000 --artifacts-dir artifacts
+# Terminal 1: Launch Python API Control Plane (http://127.0.0.1:8001)
+slokern serve --host 127.0.0.1 --port 8001 --artifacts-dir artifacts
 
 # Terminal 2: Launch Frontend Command Center (http://127.0.0.1:5173)
 cd frontend

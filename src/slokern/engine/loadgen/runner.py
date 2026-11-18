@@ -711,7 +711,28 @@ class LoadGeneratorRunner:
 
         msg = None
         try:
-            has_data = parent_conn.poll(timeout)
+            poll_interval = 0.05
+            elapsed = 0.0
+            has_data = False
+            while elapsed < timeout:
+                if self._cancel_requested:
+                    break
+                if parent_conn.poll(min(poll_interval, max(0.01, timeout - elapsed))):
+                    has_data = True
+                    break
+                elapsed += poll_interval
+                if not proc.is_alive():
+                    if parent_conn.poll(0):
+                        has_data = True
+                    break
+
+            if self._cancel_requested:
+                with self._proc_lock:
+                    if proc.is_alive():
+                        proc.kill()
+                    proc.join(timeout=1.0)
+                raise asyncio.CancelledError("LoadGenerator run was cancelled")
+
             if not has_data:
                 with self._proc_lock:
                     if proc.is_alive():

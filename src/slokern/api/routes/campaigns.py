@@ -15,12 +15,10 @@ from slokern.api.sse import SSEEventQueue
 from slokern.contracts.config import CandidateConfig
 from slokern.contracts.enums import (
     ArrivalMode,
-    ExecutionStatus,
     FeasibilityVerdict,
     RankingObjective,
     VerificationState,
 )
-from slokern.contracts.metrics import MetricSet
 from slokern.contracts.report import BaselineSummary, SearchSummary
 from slokern.contracts.search import CandidateSummary, SearchResult
 from slokern.contracts.spec import (
@@ -206,6 +204,14 @@ def _execute_campaign_worker(
         ranked = rank_candidates(evaluated_candidates, RankingObjective.MAX_THROUGHPUT_UNDER_SLO)
         winner = ranked[0] if ranked else None
         winner_config = next((c for c in all_search_configs if winner and c.candidate_id == winner.candidate_id), None)
+        if winner and winner_config:
+            winning_run = next((r for r in run_results if getattr(r, "applied_config", None) and r.applied_config.candidate_id == winner.candidate_id), None)
+            if winning_run and winning_run.applied_config:
+                winner_config = winner_config.model_copy(update={
+                    "effective_settings": winning_run.applied_config.effective_settings,
+                    "parameter_status": winning_run.applied_config.parameter_status,
+                    "environment_fingerprint": winning_run.applied_config.environment_fingerprint,
+                })
 
         if winner:
             selection_rationale = (
@@ -417,14 +423,14 @@ def dispatch_campaign_run(
     Validates input parameters, registers campaign record, and launches execution in a background worker.
     Returns (status_code, response_dict).
     """
-    adapter_name = payload.get("adapter", "local")
+    adapter_name = payload.get("adapter", "vllm")
     if not isinstance(adapter_name, str):
         return 400, {"error": "Invalid adapter parameter: must be a string."}
 
     norm_adapter = adapter_name.strip().lower()
-    if norm_adapter not in ("local", "ollama", "fake"):
+    if norm_adapter not in ("vllm", "local-vllm", "local", "ollama", "fake"):
         return 400, {
-            "error": f"Invalid adapter '{adapter_name}'. Supported adapters are: 'ollama' (or 'local'), 'fake'."
+            "error": f"Invalid adapter '{adapter_name}'. Supported adapters are: 'vllm', 'ollama' (or 'local'), 'fake'."
         }
 
     # Model validation
@@ -492,7 +498,12 @@ def dispatch_campaign_run(
     raw_slo = payload.get("slo")
     if raw_slo and isinstance(raw_slo, dict) and "constraints" in raw_slo:
         try:
-            slo = SLOSpec.model_validate(raw_slo)
+            slo_data = {
+                "slo_id": raw_slo.get("slo_id", "slo-campaign-01"),
+                "constraints": raw_slo.get("constraints", []),
+                "min_sample_count": int(raw_slo.get("min_sample_count", 1)),
+            }
+            slo = SLOSpec.model_validate(slo_data)
         except Exception as exc:
             return 400, {"error": f"Invalid SLO specification: {exc}"}
     else:
@@ -533,7 +544,12 @@ def dispatch_campaign_run(
     # Search space resolution
     search_space = payload.get("search_space")
     if not search_space:
-        if norm_adapter in ("local", "ollama"):
+        if norm_adapter in ("vllm", "local-vllm"):
+            search_space = {
+                "concurrency": [1, 2],
+                "max_tokens": [32, 128],
+            }
+        elif norm_adapter in ("local", "ollama"):
             search_space = {
                 "num_batch": [256, 1024],
                 "num_ctx": [1024, 2048],

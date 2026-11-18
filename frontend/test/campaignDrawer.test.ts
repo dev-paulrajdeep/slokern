@@ -4,6 +4,7 @@ import {
   WORKLOAD_PRESETS,
   createInitialTimelineState,
   reduceCampaignTimelineEvent,
+  getSearchSpaceForTarget,
   type CampaignTimelineState,
   type DualModeTarget,
 } from '../src/lib/campaign.ts';
@@ -27,22 +28,40 @@ describe('CampaignLaunchDrawer Model & SSE Reducer', () => {
     assert.equal(standard.targetOfferedRate, 10.0);
     assert.equal(standard.totalRequests, 50);
     assert.equal(standard.concurrencyLimit, 2);
+
+    // Deep Audit preset
+    const deep = WORKLOAD_PRESETS.deep;
+    assert.equal(deep.key, 'deep');
+    assert.equal(deep.label, 'Deep Audit');
+    assert.equal(deep.durationSeconds, 60);
+    assert.equal(deep.targetOfferedRate, 2.0);
+    assert.equal(deep.totalRequests, 120);
+    assert.equal(deep.concurrencyLimit, 2);
   });
 
-  it('verifies dual-mode configuration targets (local Ollama vs fake adapter)', () => {
-    const targets: DualModeTarget[] = ['local', 'fake'];
+  it('verifies multi-target configuration targets (vLLM, local Ollama, fake, nebius)', () => {
+    const targets: DualModeTarget[] = ['vllm', 'local', 'fake', 'nebius'];
 
     for (const target of targets) {
-      if (target === 'local') {
+      if (target === 'vllm') {
+        const vllmSpace = getSearchSpaceForTarget('vllm');
+        assert.equal(vllmSpace.param1Name, 'concurrency');
+        assert.deepEqual(vllmSpace.param1Values, [1, 2]);
+        assert.equal(vllmSpace.param2Name, 'max_tokens');
+        assert.deepEqual(vllmSpace.param2Values, [32, 128]);
+      } else if (target === 'local') {
         const localModel = 'qwen3:4b-instruct-2507-q4_K_M';
         const defaultTtft = 2500.0;
         assert.equal(localModel, 'qwen3:4b-instruct-2507-q4_K_M');
         assert.equal(defaultTtft, 2500.0);
-      } else {
+      } else if (target === 'fake') {
         const fakeModel = 'fake-qwen-4b';
         const defaultTtft = 150.0;
         assert.equal(fakeModel, 'fake-qwen-4b');
         assert.equal(defaultTtft, 150.0);
+      } else if (target === 'nebius') {
+        const nebiusSpace = getSearchSpaceForTarget('nebius');
+        assert.ok(nebiusSpace.gatedReason?.includes('BLK-17'));
       }
     }
   });

@@ -294,7 +294,8 @@ def list_experiments(artifacts_root: str = "artifacts") -> List[Dict[str, Any]]:
         status: Dict[str, Any] = {}
 
         if sample_run_id:
-            status = get_run_status(sample_run_id, artifacts_root=artifacts_root)
+            sample_run_dir = (runs_dir / sample_run_id) if (runs_dir / sample_run_id).is_dir() else None
+            status = get_run_status(sample_run_id, artifacts_root=artifacts_root, run_dir=sample_run_dir)
             if status.get("applied_config"):
                 ac = status["applied_config"]
                 model_name = ac.get("model_name", model_name)
@@ -471,7 +472,7 @@ def get_experiment_detail(experiment_id: str, artifacts_root: str = "artifacts")
     if runs_dir.is_dir():
         for r_dir in sorted(runs_dir.iterdir(), key=lambda p: p.stat().st_mtime):
             if r_dir.is_dir():
-                r_status = get_run_status(r_dir.name, artifacts_root=artifacts_root)
+                r_status = get_run_status(r_dir.name, artifacts_root=artifacts_root, run_dir=r_dir)
                 if r_status.get("error") != "Run not found":
                     runs.append(r_status)
 
@@ -551,7 +552,7 @@ def get_experiment_candidates(experiment_id: str, artifacts_root: str = "artifac
         if has_non_verification_runs and "verify" in run_id:
             continue
 
-        run_data = get_run_status(run_id, artifacts_root=artifacts_root)
+        run_data = get_run_status(run_id, artifacts_root=artifacts_root, run_dir=r_dir)
         if run_data.get("error") == "Run not found":
             continue
 

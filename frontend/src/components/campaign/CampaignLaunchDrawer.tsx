@@ -5,26 +5,33 @@ import { DemoDataChip } from '../common/DemoDataChip';
 import { VerifiedReveal } from '../stage/VerifiedReveal';
 import { launchCampaign, subscribeCampaignStream } from '../../api/client';
 import { formatNumber, formatLatency } from '../../lib/format';
+import type { WorkloadSpec } from '../../types/contracts';
 import {
   WORKLOAD_PRESETS,
   createInitialTimelineState,
   reduceCampaignTimelineEvent,
+  getSearchSpaceForTarget,
   type DualModeTarget,
+  type ServingTarget,
   type CampaignPresetKey,
   type WorkloadPresetConfig,
   type RunTimelineItem,
   type CampaignTimelineState,
+  type SearchSpaceDefinition,
 } from '../../lib/campaign';
 
 export {
   WORKLOAD_PRESETS,
   createInitialTimelineState,
   reduceCampaignTimelineEvent,
+  getSearchSpaceForTarget,
   type DualModeTarget,
+  type ServingTarget,
   type CampaignPresetKey,
   type WorkloadPresetConfig,
   type RunTimelineItem,
   type CampaignTimelineState,
+  type SearchSpaceDefinition,
 };
 
 interface CampaignLaunchDrawerProps {
@@ -32,6 +39,16 @@ interface CampaignLaunchDrawerProps {
   onClose: () => void;
   onCampaignCompleted?: (campaignId: string) => void;
   onSelectExperiment?: (experimentId: string) => void;
+  initialWorkload?: Partial<WorkloadSpec> | null;
+  initialSLO?: {
+    slo_id?: string;
+    p95_ttft_threshold?: number;
+    max_error_rate?: number;
+    itl_p95_threshold?: number;
+    throughput_floor?: number;
+    min_sample_count?: number;
+    constraints?: Array<any>;
+  } | null;
 }
 
 export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
@@ -39,9 +56,11 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
   onClose,
   onCampaignCompleted,
   onSelectExperiment,
+  initialWorkload,
+  initialSLO,
 }) => {
-  // Dual-mode Serving Target Selection
-  const [servingTarget, setServingTarget] = useState<DualModeTarget>('local');
+  // Serving Target Selection - Prioritizing Local vLLM as default across UI
+  const [servingTarget, setServingTarget] = useState<ServingTarget>('vllm');
   const [presetKey, setPresetKey] = useState<CampaignPresetKey>('quick');
 
   // Custom Workload & SLO State
@@ -58,6 +77,25 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const activeSubscriptionRef = React.useRef<(() => void) | null>(null);
 
+  // Sync initialWorkload when provided
+  useEffect(() => {
+    if (initialWorkload) {
+      if (initialWorkload.target_offered_rate != null) setTargetRate(initialWorkload.target_offered_rate);
+      if (initialWorkload.measurement_duration_s != null) setDurationSeconds(initialWorkload.measurement_duration_s);
+      if (initialWorkload.concurrency_limit != null) setConcurrencyLimit(initialWorkload.concurrency_limit);
+      setPresetKey('custom');
+    }
+  }, [initialWorkload]);
+
+  // Sync initialSLO when provided
+  useEffect(() => {
+    if (initialSLO) {
+      if (initialSLO.p95_ttft_threshold != null) setTtftThreshold(initialSLO.p95_ttft_threshold);
+      if (initialSLO.max_error_rate != null) setMaxErrorRate(initialSLO.max_error_rate);
+      setPresetKey('custom');
+    }
+  }, [initialSLO]);
+
   // Sync preset changes to input values
   const handleSelectPreset = (key: CampaignPresetKey) => {
     setPresetKey(key);
@@ -69,17 +107,23 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
       setTargetRate(WORKLOAD_PRESETS.standard.targetOfferedRate);
       setDurationSeconds(WORKLOAD_PRESETS.standard.durationSeconds);
       setConcurrencyLimit(WORKLOAD_PRESETS.standard.concurrencyLimit);
+    } else if (key === 'deep') {
+      setTargetRate(WORKLOAD_PRESETS.deep.targetOfferedRate);
+      setDurationSeconds(WORKLOAD_PRESETS.deep.durationSeconds);
+      setConcurrencyLimit(WORKLOAD_PRESETS.deep.concurrencyLimit);
     }
   };
 
   // Adjust default TTFT threshold depending on target
   useEffect(() => {
-    if (servingTarget === 'local') {
-      setTtftThreshold(2500.0);
-    } else {
-      setTtftThreshold(150.0);
+    if (!initialSLO) {
+      if (servingTarget === 'vllm' || servingTarget === 'local') {
+        setTtftThreshold(2500.0);
+      } else {
+        setTtftThreshold(150.0);
+      }
     }
-  }, [servingTarget]);
+  }, [servingTarget, initialSLO]);
 
   // Clean up any active stream on unmount
   useEffect(() => {
@@ -89,7 +133,14 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
     };
   }, []);
 
+  const searchSpace = getSearchSpaceForTarget(servingTarget);
+
   const handleLaunchCampaign = async () => {
+    if (servingTarget === 'nebius') {
+      setErrorMessage('BLK-17: Managed Nebius Token Factory cannot modify scheduler flags. Use Local vLLM or Fake Adapter.');
+      return;
+    }
+
     setIsLaunching(true);
     setErrorMessage(null);
     activeSubscriptionRef.current?.();
@@ -100,22 +151,43 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
       const payload: Record<string, any> = {
         adapter: servingTarget,
         model_name:
-          servingTarget === 'local'
+          servingTarget === 'vllm'
+            ? 'slokern-qwen3-1.7b'
+            : servingTarget === 'local'
             ? 'qwen3:4b-instruct-2507-q4_K_M'
             : 'fake-qwen-4b',
         workload: {
           workload_name: `${servingTarget}-tuning-run`,
-          arrival_mode: 'constant',
+          arrival_mode: initialWorkload?.arrival_mode ?? 'constant',
           target_offered_rate: Number(targetRate),
           measurement_duration_s: Number(durationSeconds),
-          warmup_duration_s: 0,
+          warmup_duration_s: initialWorkload?.warmup_duration_s ?? 0,
           concurrency_limit: Number(concurrencyLimit),
-          max_input_tokens: 64,
-          max_output_tokens: 32,
+          max_input_tokens: initialWorkload?.max_input_tokens ?? 64,
+          max_output_tokens: initialWorkload?.max_output_tokens ?? 32,
         },
+        p95_ttft_threshold: Number(ttftThreshold),
+        max_error_rate: Number(maxErrorRate),
         slo: {
+          slo_id: initialSLO?.slo_id ?? 'slo-campaign-01',
           p95_ttft_threshold: Number(ttftThreshold),
           max_error_rate: Number(maxErrorRate),
+          min_sample_count: Math.min(
+            initialSLO?.min_sample_count ?? 1,
+            Math.max(1, Math.floor(Number(targetRate) * Number(durationSeconds) * 0.5))
+          ),
+          constraints: initialSLO?.constraints?.map((c: any) => {
+            if (c.metric_name === 'ttft_ms') {
+              return { ...c, threshold: Number(ttftThreshold) };
+            }
+            if (c.metric_name === 'error_rate') {
+              return { ...c, threshold: Number(maxErrorRate) };
+            }
+            return c;
+          }) ?? [
+            { metric_name: 'ttft_ms', statistic: 'p95', threshold: Number(ttftThreshold), unit: 'ms', operator: '<=' },
+            { metric_name: 'error_rate', statistic: 'mean', threshold: Number(maxErrorRate), unit: 'fraction', operator: '<=' },
+          ],
         },
       };
 
@@ -159,7 +231,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
       onClose={onClose}
       title="Optimization Campaign Runner"
       subtitle="Bounded 2x2 Grid Search with Real-Time SSE Verification"
-      width="640px"
+      width="680px"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {/* Error Banner */}
@@ -179,7 +251,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
           </div>
         )}
 
-        {/* Section 1: Dual-Mode Serving Target Selector */}
+        {/* Section 1: Serving Target Selector (Local vLLM, Local Ollama, Fake Adapter, Nebius) */}
         <div>
           <label
             style={{
@@ -195,6 +267,47 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
             Serving Target
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            {/* Local vLLM (WSL2 · RTX 5060) - Primary Default */}
+            <div
+              onClick={() => !isRunning && setServingTarget('vllm')}
+              data-testid="target-vllm"
+              style={{
+                padding: '12px',
+                borderRadius: '6px',
+                border: '1px solid',
+                borderColor:
+                  servingTarget === 'vllm' ? 'var(--primary, #76B900)' : 'var(--border, #263124)',
+                backgroundColor:
+                  servingTarget === 'vllm' ? 'var(--raised, #151B15)' : 'var(--surface, #0E120F)',
+                cursor: isRunning ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                boxShadow: servingTarget === 'vllm' ? '0 0 12px rgba(118, 185, 0, 0.2)' : 'none',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)' }}>
+                  Local vLLM (WSL2)
+                </span>
+                <Badge tone="verified" size="sm">
+                  LIVE · GPU
+                </Badge>
+              </div>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)' }}>
+                RTX 5060 Laptop · http://localhost:8000
+              </span>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  color: 'var(--primary-bright, #95D500)',
+                }}
+              >
+                slokern-qwen3-1.7b
+              </span>
+            </div>
+
             {/* Local Ollama Option */}
             <div
               onClick={() => !isRunning && setServingTarget('local')}
@@ -215,13 +328,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    color: 'var(--text-primary, #F0F3EF)',
-                  }}
-                >
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)' }}>
                   Local Ollama
                 </span>
                 <Badge tone="verified" size="sm">
@@ -229,7 +336,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
                 </Badge>
               </div>
               <span style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)' }}>
-                Host RTX 5060 · Loopback 127.0.0.1:11434
+                Host RTX 5060 · 127.0.0.1:11434
               </span>
               <span
                 style={{
@@ -262,13 +369,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    color: 'var(--text-primary, #F0F3EF)',
-                  }}
-                >
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)' }}>
                   Fake Adapter
                 </span>
                 <DemoDataChip size="sm" />
@@ -286,10 +387,160 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
                 fake-qwen-4b (Fast Mock)
               </span>
             </div>
+
+            {/* Nebius Cloud Option */}
+            <div
+              onClick={() => !isRunning && setServingTarget('nebius')}
+              data-testid="target-nebius"
+              style={{
+                padding: '12px',
+                borderRadius: '6px',
+                border: '1px solid',
+                borderColor:
+                  servingTarget === 'nebius' ? 'var(--warning, #E9B949)' : 'var(--border, #263124)',
+                backgroundColor:
+                  servingTarget === 'nebius' ? 'var(--raised, #151B15)' : 'var(--surface, #0E120F)',
+                cursor: isRunning ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                boxShadow: servingTarget === 'nebius' ? '0 0 12px rgba(233, 185, 73, 0.15)' : 'none',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary, #F0F3EF)' }}>
+                  Nebius Cloud
+                </span>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontFamily: 'var(--font-mono, monospace)',
+                    fontWeight: 700,
+                    color: 'var(--warning, #E9B949)',
+                    backgroundColor: 'rgba(233, 185, 73, 0.12)',
+                    padding: '1px 6px',
+                    borderRadius: '2px',
+                  }}
+                >
+                  BLK-17 GATED
+                </span>
+              </div>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)' }}>
+                Token Factory · H100 Remote
+              </span>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  color: 'var(--text-muted, #727D73)',
+                }}
+              >
+                NVIDIA-Nemotron-3-Nano
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Section 2: Workload Presets */}
+        {/* Section 2: 2×2 Search Space Envelope Preview */}
+        <div
+          style={{
+            padding: '12px 14px',
+            backgroundColor: 'var(--surface, #0E120F)',
+            border: '1px solid var(--border-strong, #384635)',
+            borderRadius: '6px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--text-secondary, #A0AAA0)',
+              }}
+            >
+              2×2 Search Space Envelope
+            </span>
+            <span
+              style={{
+                fontSize: '10px',
+                fontFamily: 'var(--font-mono, monospace)',
+                color: 'var(--primary-bright, #95D500)',
+              }}
+            >
+              Strict 6-Run Budget Invariant
+            </span>
+          </div>
+
+          {searchSpace.gatedReason ? (
+            <div
+              style={{
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono, monospace)',
+                color: 'var(--warning, #E9B949)',
+                lineHeight: 1.45,
+              }}
+            >
+              ⚠️ {searchSpace.gatedReason}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary, #A0AAA0)' }}>
+                {searchSpace.description}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div
+                  style={{
+                    padding: '8px',
+                    backgroundColor: 'var(--raised, #151B15)',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border, #263124)',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-mono, monospace)',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted, #727D73)' }}>Axis 1: </span>
+                  <strong style={{ color: 'var(--primary-bright, #95D500)' }}>{searchSpace.param1Name}</strong>
+                  <div style={{ color: 'var(--text-primary, #F0F3EF)', marginTop: '2px' }}>
+                    [{searchSpace.param1Values.join(', ')}]
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: '8px',
+                    backgroundColor: 'var(--raised, #151B15)',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border, #263124)',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-mono, monospace)',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted, #727D73)' }}>Axis 2: </span>
+                  <strong style={{ color: 'var(--primary-bright, #95D500)' }}>{searchSpace.param2Name}</strong>
+                  <div style={{ color: 'var(--text-primary, #F0F3EF)', marginTop: '2px' }}>
+                    [{searchSpace.param2Values.join(', ')}]
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  fontSize: '10px',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  color: 'var(--text-muted, #727D73)',
+                  marginTop: '2px',
+                }}
+              >
+                Structure: 1 Baseline + 4 Grid Candidates + 1 Independent Verification Rerun = Exactly 6 runs.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Section 3: Workload Evaluation Presets */}
         <div>
           <label
             style={{
@@ -304,14 +555,14 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
           >
             Workload Evaluation Presets
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
             <button
               type="button"
               disabled={isRunning}
               onClick={() => handleSelectPreset('quick')}
               data-testid="preset-quick"
               style={{
-                padding: '10px 12px',
+                padding: '10px 10px',
                 backgroundColor:
                   presetKey === 'quick' ? 'var(--raised, #151B15)' : 'var(--surface, #0E120F)',
                 border: '1px solid',
@@ -326,11 +577,11 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
                 textAlign: 'left',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '2px' }}>
-                Quick Benchmark
+              <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>
+                Quick Test (2s)
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)' }}>
-                2s duration · 5 rps · 20 reqs
+              <div style={{ fontSize: '10px', color: 'var(--text-muted, #727D73)' }}>
+                2s · 5 rps · 20 reqs
               </div>
             </button>
 
@@ -340,7 +591,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
               onClick={() => handleSelectPreset('standard')}
               data-testid="preset-standard"
               style={{
-                padding: '10px 12px',
+                padding: '10px 10px',
                 backgroundColor:
                   presetKey === 'standard' ? 'var(--raised, #151B15)' : 'var(--surface, #0E120F)',
                 border: '1px solid',
@@ -355,17 +606,46 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
                 textAlign: 'left',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '2px' }}>
-                Standard SLO Evaluation
+              <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>
+                Standard (5s)
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted, #727D73)' }}>
-                5s duration · 10 rps · 50 reqs
+              <div style={{ fontSize: '10px', color: 'var(--text-muted, #727D73)' }}>
+                5s · 10 rps · 50 reqs
+              </div>
+            </button>
+
+            <button
+              type="button"
+              disabled={isRunning}
+              onClick={() => handleSelectPreset('deep')}
+              data-testid="preset-deep"
+              style={{
+                padding: '10px 10px',
+                backgroundColor:
+                  presetKey === 'deep' ? 'var(--raised, #151B15)' : 'var(--surface, #0E120F)',
+                border: '1px solid',
+                borderColor:
+                  presetKey === 'deep' ? 'var(--primary, #76B900)' : 'var(--border, #263124)',
+                borderRadius: '4px',
+                color:
+                  presetKey === 'deep'
+                    ? 'var(--text-primary, #F0F3EF)'
+                    : 'var(--text-secondary, #A0AAA0)',
+                cursor: isRunning ? 'not-allowed' : 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>
+                Deep Audit (60s)
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted, #727D73)' }}>
+                60s · 2 rps · 120 reqs
               </div>
             </button>
           </div>
         </div>
 
-        {/* Section 3: Advanced Workload & SLO Accordion */}
+        {/* Section 4: Advanced Workload & SLO Accordion */}
         <div style={{ border: '1px solid var(--border, #263124)', borderRadius: '4px' }}>
           <button
             type="button"
@@ -503,30 +783,39 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
           )}
         </div>
 
-        {/* Section 4: Action Button */}
+        {/* Section 5: Action Button */}
         <div>
           <button
             type="button"
             onClick={handleLaunchCampaign}
-            disabled={isRunning}
+            disabled={isRunning || servingTarget === 'nebius'}
             data-testid="start-campaign-btn"
             style={{
               width: '100%',
               padding: '12px 16px',
-              backgroundColor: isRunning ? 'var(--raised, #151B15)' : 'var(--primary, #76B900)',
+              backgroundColor:
+                isRunning || servingTarget === 'nebius'
+                  ? 'var(--raised, #151B15)'
+                  : 'var(--primary, #76B900)',
               border: 'none',
               borderRadius: '4px',
-              color: isRunning ? 'var(--text-secondary, #A0AAA0)' : '#0E120F',
+              color:
+                isRunning || servingTarget === 'nebius'
+                  ? 'var(--text-secondary, #A0AAA0)'
+                  : '#0E120F',
               fontSize: '13px',
               fontFamily: 'var(--font-mono, monospace)',
               fontWeight: 800,
               letterSpacing: '0.04em',
-              cursor: isRunning ? 'not-allowed' : 'pointer',
+              cursor: isRunning || servingTarget === 'nebius' ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: '8px',
-              boxShadow: isRunning ? 'none' : '0 0 16px rgba(118, 185, 0, 0.3)',
+              boxShadow:
+                isRunning || servingTarget === 'nebius'
+                  ? 'none'
+                  : '0 0 16px rgba(118, 185, 0, 0.3)',
             }}
           >
             {isRunning ? (
@@ -544,6 +833,8 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
                 />
                 <span>Campaign Executing in Background ({timeline.currentRunIndex + 1}/6)...</span>
               </>
+            ) : servingTarget === 'nebius' ? (
+              <span>Optimization Gated by BLK-17 (Use Local vLLM or Fake)</span>
             ) : (
               <>
                 <span>▶</span>
@@ -553,7 +844,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
           </button>
         </div>
 
-        {/* Section 5: Live 6-Run Visual Timeline */}
+        {/* Section 6: Live 6-Run Visual Timeline */}
         <div>
           <div
             style={{
@@ -724,7 +1015,7 @@ export const CampaignLaunchDrawer: React.FC<CampaignLaunchDrawerProps> = ({
           </div>
         </div>
 
-        {/* Section 6: Final Verification Reveal & Winner Details */}
+        {/* Section 7: Final Verification Reveal & Winner Details */}
         {isCompleted && (
           <div style={{ marginTop: '10px' }}>
             <VerifiedReveal isVerified={isVerifiedWinner}>

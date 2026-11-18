@@ -35,8 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     smoke_parser.add_argument(
         "--adapter",
-        choices=["local", "nebius", "fake"],
-        help="Serving backend adapter (local, nebius, fake). Defaults to local (or SLOKERN_ADAPTER).",
+        choices=["vllm", "local", "nebius", "fake"],
+        help="Serving backend adapter (vllm, local, nebius, fake). Defaults to vllm (or SLOKERN_ADAPTER).",
     )
     smoke_parser.add_argument("--model", help="Target model identifier.")
     smoke_parser.add_argument("--base-url", help="Base URL of the serving endpoint.")
@@ -64,8 +64,8 @@ def build_parser() -> argparse.ArgumentParser:
     opt_parser.add_argument("spec_file", help="Path to ExperimentSpec JSON file.")
     opt_parser.add_argument(
         "--adapter",
-        choices=["local", "nebius", "fake"],
-        help="Serving backend adapter (local, nebius, fake). Defaults to local (or SLOKERN_ADAPTER).",
+        choices=["vllm", "local", "nebius", "fake"],
+        help="Serving backend adapter (vllm, local, nebius, fake). Defaults to vllm (or SLOKERN_ADAPTER).",
     )
     opt_parser.add_argument(
         "--objective",
@@ -92,8 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
     verify_p.add_argument("search_result", help="Path to SearchResult JSON file.")
     verify_p.add_argument(
         "--adapter",
-        choices=["local", "nebius", "fake"],
-        help="Serving backend adapter (local, nebius, fake). Defaults to local (or SLOKERN_ADAPTER).",
+        choices=["vllm", "local", "nebius", "fake"],
+        help="Serving backend adapter (vllm, local, nebius, fake). Defaults to vllm (or SLOKERN_ADAPTER).",
     )
     verify_p.add_argument(
         "--output-dir",
@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the SLOKern control plane HTTP API server.",
     )
     serve_p.add_argument("--host", default="127.0.0.1", help="Host interface to bind (default: 127.0.0.1)")
-    serve_p.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
+    serve_p.add_argument("--port", type=int, default=8001, help="Port to listen on (default: 8001)")
     serve_p.add_argument("--artifacts-dir", default="artifacts", help="Artifacts root directory")
 
     # credentials

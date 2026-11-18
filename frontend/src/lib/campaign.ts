@@ -1,5 +1,6 @@
-export type DualModeTarget = 'local' | 'fake';
-export type CampaignPresetKey = 'quick' | 'standard' | 'custom';
+export type DualModeTarget = 'vllm' | 'local' | 'fake' | 'nebius';
+export type ServingTarget = DualModeTarget;
+export type CampaignPresetKey = 'quick' | 'standard' | 'deep' | 'custom';
 
 export interface WorkloadPresetConfig {
   key: CampaignPresetKey;
@@ -11,7 +12,7 @@ export interface WorkloadPresetConfig {
   description: string;
 }
 
-export const WORKLOAD_PRESETS: Record<'quick' | 'standard', WorkloadPresetConfig> = {
+export const WORKLOAD_PRESETS: Record<'quick' | 'standard' | 'deep', WorkloadPresetConfig> = {
   quick: {
     key: 'quick',
     label: 'Quick Benchmark',
@@ -30,7 +31,63 @@ export const WORKLOAD_PRESETS: Record<'quick' | 'standard', WorkloadPresetConfig
     concurrencyLimit: 2,
     description: '5s duration, 10 rps target, 50 requests total',
   },
+  deep: {
+    key: 'deep',
+    label: 'Deep Audit',
+    durationSeconds: 60,
+    targetOfferedRate: 2.0,
+    totalRequests: 120,
+    concurrencyLimit: 2,
+    description: '60s duration, 2 rps target, 120 requests total',
+  },
 };
+
+export interface SearchSpaceDefinition {
+  param1Name: string;
+  param1Values: (number | string)[];
+  param2Name: string;
+  param2Values: (number | string)[];
+  description: string;
+  gatedReason?: string;
+}
+
+export function getSearchSpaceForTarget(target: DualModeTarget): SearchSpaceDefinition {
+  switch (target) {
+    case 'vllm':
+      return {
+        param1Name: 'concurrency',
+        param1Values: [1, 2],
+        param2Name: 'max_tokens',
+        param2Values: [32, 128],
+        description: 'Dynamic serving envelope on NVIDIA RTX 5060 (Zero Restarts)',
+      };
+    case 'local':
+      return {
+        param1Name: 'num_batch',
+        param1Values: [256, 1024],
+        param2Name: 'num_ctx',
+        param2Values: [1024, 2048],
+        description: 'Local Ollama request options matrix',
+      };
+    case 'fake':
+      return {
+        param1Name: 'max_num_batched_tokens',
+        param1Values: [1024, 2048],
+        param2Name: 'max_num_seqs',
+        param2Values: [16, 64],
+        description: 'Deterministic simulated serving configuration space',
+      };
+    case 'nebius':
+      return {
+        param1Name: 'scheduler_reconfiguration',
+        param1Values: [],
+        param2Name: 'vllm_startup_flags',
+        param2Values: [],
+        description: 'Nebius Cloud Token Factory endpoint',
+        gatedReason: 'BLK-17: Managed endpoint prevents scheduler startup flag modification.',
+      };
+  }
+}
 
 export interface RunTimelineItem {
   runIndex: number;

@@ -24,7 +24,7 @@
 - **Evidence Classification:** `LIVE` (Single probe; distinct from full benchmark baseline).
 
 ### Dual-Runtime Local Operation
-- **Backend API Server:** `python src/slokern/api/app.py 127.0.0.1 8000`
+- **Backend API Server:** `python src/slokern/api/app.py 127.0.0.1 8001`
 - **Frontend Command Center:** `npm run dev --prefix frontend` (Vite on `http://127.0.0.1:5173`)
 - **Screenshots:** 7 full-resolution (1920×1080) screenshots captured in `artifacts/screenshots/`.
 

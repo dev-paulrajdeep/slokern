@@ -4,12 +4,12 @@ Owner: Rajdeep (Historical design: Aman)
 Authority: Aligned with AGENTS.md Section 1, 10, 11 and DEC-0014
 """
 
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from slokern.common.security import sanitize_credentials
@@ -60,11 +60,12 @@ def smoke_test_command(
     """
     out_path = Path(artifact_path) if artifact_path else Path("artifacts") / "smoke_test_result.json"
     now_iso = datetime.now(timezone.utc).isoformat()
+    resolved_adapter = adapter or os.environ.get("SLOKERN_ADAPTER", "vllm")
 
     artifact: Dict[str, Any] = {
         "timestamp": now_iso,
         "status": "FAILED",
-        "adapter": adapter or os.environ.get("SLOKERN_ADAPTER", "local"),
+        "adapter": resolved_adapter,
         "model": model or "unknown",
         "endpoint_host": "unknown",
         "provider": "unknown",
@@ -86,7 +87,7 @@ def smoke_test_command(
         kwargs["api_key"] = api_key
 
     try:
-        serving_adapter = create_serving_adapter(backend=adapter, **kwargs)
+        serving_adapter = create_serving_adapter(backend=resolved_adapter, **kwargs)
     except ConfigurationError as exc:
         sanitized_msg = sanitize_credentials(str(exc))
         print(f"[FAIL] Configuration Error: {sanitized_msg}", file=sys.stderr)

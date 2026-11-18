@@ -94,7 +94,7 @@ class RuntimeCapabilities(BaseModel):
         try:
             return getattr(self, item)
         except AttributeError:
-            raise KeyError(item)
+            raise KeyError(item) from None
 
     def __contains__(self, item: Any) -> bool:
         return hasattr(self, str(item))

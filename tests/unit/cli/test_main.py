@@ -40,6 +40,18 @@ def test_main_routes_to_smoke_test():
         )
 
 
+def test_main_routes_to_smoke_test_vllm_adapter():
+    with patch("slokern.cli.main.smoke_test_command", return_value=0) as mock_cmd:
+        ret = main(["smoke-test", "--adapter", "vllm", "--prompt", "vllm probe"])
+        assert ret == 0
+        mock_cmd.assert_called_once_with(
+            adapter="vllm",
+            model=None,
+            base_url=None,
+            prompt="vllm probe",
+        )
+
+
 def test_main_routes_to_optimize():
     with patch("slokern.cli.main.optimize_command", return_value=0) as mock_cmd:
         ret = main(["optimize", "spec.json", "--adapter", "fake", "--objective", "min_p95_ttft"])

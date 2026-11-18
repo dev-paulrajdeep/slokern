@@ -274,12 +274,18 @@ export const TokenDistributionPreview: React.FC<TokenDistributionPreviewProps> =
 interface WorkloadsViewProps {
   onSaveWorkload?: (spec: WorkloadSpec) => void;
   onLaunchBenchmark?: (spec: WorkloadSpec) => void;
+  onOpenCampaignDrawer?: (workloadSpec: WorkloadSpec, sloSpec: any) => void;
+  onRunProbe?: () => void;
   isLaunching?: boolean;
+  isProbing?: boolean;
 }
 
 export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
   onLaunchBenchmark,
+  onOpenCampaignDrawer,
+  onRunProbe,
   isLaunching = false,
+  isProbing = false,
 }) => {
   const [workloadName, setWorkloadName] = useState('chat-completions-prod');
   const [arrivalMode, setArrivalMode] = useState<ArrivalMode>('poisson');
@@ -296,10 +302,56 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
   const [throughputFloor, setThroughputFloor] = useState(50);
   const [errorRateCeiling, setErrorRateCeiling] = useState(1.0);
 
+  const applyPreset = (preset: 'quick' | 'standard' | 'deep') => {
+    if (preset === 'quick') {
+      setWorkloadName('quick-test');
+      setArrivalMode('constant');
+      setTargetRate(5);
+      setConcurrency(1);
+      setWarmupSec(5);
+      setMeasureSec(2);
+      setMaxInputTok(64);
+      setMaxOutputTok(32);
+      setTtftCeiling(2500);
+      setItlCeiling(25);
+      setThroughputFloor(20);
+      setErrorRateCeiling(1.0);
+    } else if (preset === 'standard') {
+      setWorkloadName('standard-eval');
+      setArrivalMode('constant');
+      setTargetRate(10);
+      setConcurrency(2);
+      setWarmupSec(8);
+      setMeasureSec(15);
+      setMaxInputTok(128);
+      setMaxOutputTok(64);
+      setTtftCeiling(2500);
+      setItlCeiling(25);
+      setThroughputFloor(20);
+      setErrorRateCeiling(1.0);
+    } else if (preset === 'deep') {
+      setWorkloadName('deep-audit');
+      setArrivalMode('poisson');
+      setTargetRate(16);
+      setConcurrency(32);
+      setWarmupSec(15);
+      setMeasureSec(60);
+      setMaxInputTok(1024);
+      setMaxOutputTok(256);
+      setTtftCeiling(2500);
+      setItlCeiling(25);
+      setThroughputFloor(20);
+      setErrorRateCeiling(1.0);
+    }
+  };
+
   // Hardened Validation (guards against NaN, Infinity, negative values, and empty strings)
   const errors: string[] = [];
   if (!workloadName || workloadName.trim().length === 0) {
     errors.push('Workload identifier cannot be empty');
+  }
+  if (arrivalMode === 'closed') {
+    errors.push('Closed Concurrency (Contract declared; deferred in runner)');
   }
   if (Number.isNaN(targetRate) || !Number.isFinite(targetRate) || targetRate <= 0) {
     errors.push('Target rate must be a valid number > 0 rps');
@@ -307,11 +359,11 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
   if (Number.isNaN(concurrency) || !Number.isFinite(concurrency) || concurrency <= 0) {
     errors.push('Concurrency limit must be a valid integer > 0');
   }
-  if (Number.isNaN(warmupSec) || !Number.isFinite(warmupSec) || warmupSec < 5) {
-    errors.push('Warm-up duration must be at least 5s to ensure GPU cache thermalization');
+  if (Number.isNaN(warmupSec) || !Number.isFinite(warmupSec) || warmupSec < 0) {
+    errors.push('Warm-up duration must be >= 0s');
   }
-  if (Number.isNaN(measureSec) || !Number.isFinite(measureSec) || measureSec < 15) {
-    errors.push('Measurement duration must be at least 15s for statistically valid sample sizes');
+  if (Number.isNaN(measureSec) || !Number.isFinite(measureSec) || measureSec < 2) {
+    errors.push('Measurement duration must be at least 2s for reproducible benchmarking');
   }
   if (Number.isNaN(maxInputTok) || !Number.isFinite(maxInputTok) || maxInputTok <= 0) {
     errors.push('Max input tokens must be > 0');
@@ -347,6 +399,45 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
     max_output_tokens: maxOutputTok,
   };
 
+  const currentSLOSpec = {
+    slo_id: 'slo-custom',
+    min_sample_count: 2,
+    p95_ttft_threshold: ttftCeiling,
+    itl_p95_threshold: itlCeiling,
+    throughput_floor: throughputFloor,
+    max_error_rate: errorRateCeiling / 100,
+    constraints: [
+      {
+        metric_name: 'ttft_ms',
+        statistic: 'p95' as const,
+        threshold: ttftCeiling,
+        unit: 'ms' as const,
+        operator: '<=' as const,
+      },
+      {
+        metric_name: 'itl_ms',
+        statistic: 'p95' as const,
+        threshold: itlCeiling,
+        unit: 'ms' as const,
+        operator: '<=' as const,
+      },
+      {
+        metric_name: 'token_throughput_tps',
+        statistic: 'mean' as const,
+        threshold: throughputFloor,
+        unit: 'requests/s' as const,
+        operator: '>=' as const,
+      },
+      {
+        metric_name: 'error_rate',
+        statistic: 'mean' as const,
+        threshold: errorRateCeiling / 100,
+        unit: 'fraction' as const,
+        operator: '<=' as const,
+      },
+    ],
+  };
+
   return (
     <div className="view-workloads workspace-enter" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Header */}
@@ -363,11 +454,46 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
           </p>
         </div>
 
-        {onLaunchBenchmark && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Secondary Action: Run Preflight Probe */}
+          {onRunProbe && (
+            <button
+              type="button"
+              onClick={onRunProbe}
+              disabled={isProbing}
+              data-testid="workloads-preflight-probe-btn"
+              style={{
+                backgroundColor: 'var(--surface, #0E120F)',
+                border: '1px solid var(--border-strong, #384635)',
+                color: isProbing ? 'var(--text-muted, #727D73)' : 'var(--text-primary, #F0F3EF)',
+                fontSize: '12px',
+                fontFamily: 'var(--font-mono, monospace)',
+                fontWeight: 600,
+                padding: '8px 14px',
+                borderRadius: '4px',
+                cursor: isProbing ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span>⚡</span>
+              <span>{isProbing ? 'Running Preflight Probe...' : 'Run Preflight Probe'}</span>
+            </button>
+          )}
+
+          {/* Primary Action: Configure & Launch 6-Run Campaign → */}
           <button
             type="button"
-            onClick={() => onLaunchBenchmark(currentSpec)}
+            onClick={() => {
+              if (onOpenCampaignDrawer) {
+                onOpenCampaignDrawer(currentSpec, currentSLOSpec);
+              } else if (onLaunchBenchmark) {
+                onLaunchBenchmark(currentSpec);
+              }
+            }}
             disabled={!isValid || isLaunching}
+            data-testid="workloads-launch-campaign-btn"
             style={{
               backgroundColor: isValid && !isLaunching ? 'var(--primary, #76B900)' : 'var(--raised, #151B15)',
               border: '1px solid',
@@ -379,11 +505,12 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
               padding: '8px 18px',
               borderRadius: '4px',
               cursor: isValid && !isLaunching ? 'pointer' : 'not-allowed',
+              boxShadow: isValid && !isLaunching ? '0 0 14px rgba(118, 185, 0, 0.25)' : 'none',
             }}
           >
-            {isLaunching ? 'Running Preflight Probe...' : 'Validate & Preflight Check →'}
+            {isLaunching ? 'Launching Campaign...' : 'Configure & Launch 6-Run Campaign →'}
           </button>
-        )}
+        </div>
       </div>
 
       {/* Validation Errors Notice */}
@@ -418,6 +545,72 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
             Workload Traffic Profile
           </h2>
 
+          {/* Quick-fill Workload Presets */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary, #A0AAA0)', fontWeight: 600, fontFamily: 'var(--font-mono, monospace)' }}>
+              Workload Quick Presets:
+            </span>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => applyPreset('quick')}
+                data-testid="preset-quick-btn"
+                style={{
+                  padding: '5px 10px',
+                  backgroundColor: measureSec === 2 ? 'var(--elevated, #1D251E)' : 'var(--raised, #151B15)',
+                  border: '1px solid',
+                  borderColor: measureSec === 2 ? 'var(--primary, #76B900)' : 'var(--border, #263124)',
+                  borderRadius: '3px',
+                  color: measureSec === 2 ? 'var(--primary-bright, #95D500)' : 'var(--text-secondary, #A0AAA0)',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Quick Test (2s)
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('standard')}
+                data-testid="preset-standard-btn"
+                style={{
+                  padding: '5px 10px',
+                  backgroundColor: measureSec === 15 ? 'var(--elevated, #1D251E)' : 'var(--raised, #151B15)',
+                  border: '1px solid',
+                  borderColor: measureSec === 15 ? 'var(--primary, #76B900)' : 'var(--border, #263124)',
+                  borderRadius: '3px',
+                  color: measureSec === 15 ? 'var(--primary-bright, #95D500)' : 'var(--text-secondary, #A0AAA0)',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Standard Evaluation (15s)
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('deep')}
+                data-testid="preset-deep-btn"
+                style={{
+                  padding: '5px 10px',
+                  backgroundColor: measureSec === 60 ? 'var(--elevated, #1D251E)' : 'var(--raised, #151B15)',
+                  border: '1px solid',
+                  borderColor: measureSec === 60 ? 'var(--primary, #76B900)' : 'var(--border, #263124)',
+                  borderRadius: '3px',
+                  color: measureSec === 60 ? 'var(--primary-bright, #95D500)' : 'var(--text-secondary, #A0AAA0)',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Deep Audit (60s)
+              </button>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px', fontFamily: 'var(--font-mono, monospace)' }}>
             <div>
               <label style={{ display: 'block', color: 'var(--text-secondary, #A0AAA0)', marginBottom: '4px' }}>
@@ -440,9 +633,24 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
             </div>
 
             <div>
-              <label style={{ display: 'block', color: 'var(--text-secondary, #A0AAA0)', marginBottom: '4px' }}>
-                Arrival Pattern
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label style={{ display: 'block', color: 'var(--text-secondary, #A0AAA0)' }}>
+                  Arrival Pattern
+                </label>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontFamily: 'var(--font-mono, monospace)',
+                    color: 'var(--text-muted, #727D73)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    padding: '1px 6px',
+                    borderRadius: '2px',
+                    border: '1px solid var(--border, #263124)',
+                  }}
+                >
+                  Closed Concurrency (Contract declared; deferred in runner)
+                </span>
+              </div>
               <select
                 value={arrivalMode}
                 onChange={(e) => setArrivalMode(e.target.value as ArrivalMode)}
@@ -458,7 +666,9 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
               >
                 <option value="poisson">Poisson Process (Stochastic Memoryless Inter-Arrivals)</option>
                 <option value="constant">Constant Interval (Deterministic Cadence)</option>
-                <option value="closed">Closed Loop (Concurrency Bound Driven)</option>
+                <option value="closed" disabled>
+                  Closed Loop — Closed Concurrency (Contract declared; deferred in runner)
+                </option>
               </select>
             </div>
 
@@ -515,7 +725,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
                 </label>
                 <input
                   type="number"
-                  min="5"
+                  min="0"
                   step="1"
                   value={Number.isNaN(warmupSec) ? '' : warmupSec}
                   onChange={(e) => setWarmupSec(e.target.value === '' ? NaN : Number(e.target.value))}
@@ -537,7 +747,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
                 </label>
                 <input
                   type="number"
-                  min="15"
+                  min="2"
                   step="1"
                   value={Number.isNaN(measureSec) ? '' : measureSec}
                   onChange={(e) => setMeasureSec(e.target.value === '' ? NaN : Number(e.target.value))}

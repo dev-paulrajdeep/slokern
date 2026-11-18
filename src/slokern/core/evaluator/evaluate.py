@@ -22,7 +22,7 @@ def get_observed_value(metric_set: MetricSet, metric_name: str, statistic: str) 
     """
     if metric_name in ("request_throughput", "request_throughput_rps"):
         return metric_set.request_throughput_rps
-    if metric_name in ("token_throughput", "token_throughput_tps"):
+    if metric_name in ("token_throughput", "token_throughput_tps", "throughput_tok_s"):
         return metric_set.token_throughput_tps
     if metric_name == "error_rate":
         return metric_set.error_rate
@@ -92,7 +92,7 @@ def get_reason_code_for_failure(metric_name: str, statistic: str, operator: str)
     if metric_name == "error_rate":
         return ReasonCode.ERROR_RATE_EXCEEDED
 
-    if metric_name in ("request_throughput", "request_throughput_rps", "token_throughput", "token_throughput_tps"):
+    if metric_name in ("request_throughput", "request_throughput_rps", "token_throughput", "token_throughput_tps", "throughput_tok_s"):
         return ReasonCode.THROUGHPUT_DEFICIT
 
     return ReasonCode.MISSING_REQUIRED_METRIC

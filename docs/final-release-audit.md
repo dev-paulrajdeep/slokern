@@ -304,10 +304,10 @@ Audited across all 8 campaigns in `artifacts/experiments/`:
 | **Ruff Linter** | `ruff check src/slokern/api/routes/campaigns.py ...` | **0 errors (all checks passed)** | 0.05s | Static analysis on modified API & serving modules |
 
 **Unique Test Accounting:**
-- Unique Unit & Contract Tests: 673 collected (672 passed, 1 skipped)
-- Unique Integration Tests: 14 collected (10 mock integration + 4 live GPU integration, 14 passed)
-- **Total Unique Backend Tests:** 687 collected (686 passed, 1 skipped)
-- Note: The 73 API tests (`tests/unit/api/`) reside within `tests/unit/` and are not counted additively.
+- Historical Milestone M3 Snapshot: 687 collected (686 passed, 1 skipped) across core unit, contract, and integration tests.
+- Master Deduplicated Suite: **774 unique backend tests collected** (encompassing 156 contract, 604 unit [including 86 installer tests in `tests/unit/installer/` and 73 API tests], 10 mock integration, and 4 live GPU integration). Outcome: **772 passed, 2 skipped, 0 failed** in 155.27s combined duration (129.67s non-live suites + 25.60s live GPU integration).
+- Combined Repository Total: **822 unique automated tests** (774 backend + 48 frontend) resulting in **820 passed, 2 skipped, 0 failed** in 155.61s total duration.
+- *Strict Accounting Invariant:* These 822 automated regression tests evaluate codebase test assertions and are strictly decoupled from the **20 High-Level Release Acceptance Tests** (Tests 01–20, 20 PASS / 0 BLOCKED / 0 FAIL), which evaluate release specification criteria. The two categories must never be combined or double-counted.
 
 ---
 
@@ -373,3 +373,4 @@ Summary of Adversarial Review by `@release-verifier`:
 1. **Target Hardware & Environment:** Certified for local deployment on NVIDIA GeForce RTX 5060 Laptop GPU (8 GB GDDR7) with vLLM 0.34.0 (WSL2 Ubuntu 24.04).
 2. **Primary Model of Record:** `slokern-qwen3-1.7b` (Qwen/Qwen3-1.7B, BF16).
 3. **Evidence Hygiene:** 100% empirical, unaggregated, monotonic physical GPU evidence. Zero data fabrication. Zero leaked secrets. All 10 acceptance criteria (UI-01 through UI-10) and all 10 release gates (G0 through G9) fully satisfied.
+4. **Hackathon Track Compliance Distinction:** This certification establishes **Software Release Readiness (GO)** for the SLOKern platform and its local physical inference pipeline. It does **not** certify complete competition compliance for external track mandates requiring live Nebius Token Factory cloud deployment or NVIDIA Nemotron model execution, which remain **BLOCKED / NOT VERIFIED** due to cloud credential availability (`BLK-04`) and managed endpoint parameter control restrictions (`BLK-17`). See `docs/hackathon-compliance.md` and `docs/final-20-test-report.md` § 1.4 for the definitive traceability matrix.

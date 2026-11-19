@@ -5,7 +5,7 @@
 > **Auditor:** Senior Software Architect & Hackathon Compliance Auditor  
 > **Authority:** Aligned with official Devpost rules, FAQs, and updates cited below.
 
-> **Freshness and evidence note:** This matrix was last reviewed 2026-10-18 and was not rechecked against current external rules during the documentation synchronization task. Treat track eligibility, VM/Serverless qualification, model requirements, and submission requirements as verification dependencies. A proposed NVIDIA model or provider path does not prove compliance; no model access, deployment, or live demo was verified here.
+> **Freshness and Evidence Note (Re-audited 2026-11-20):** This compliance matrix was audited during final release reconciliation. In accordance with AGENTS.md § 1, software release readiness (GO) does not establish competition compliance. While core open-source, architecture, licensing, and local GPU benchmark verification requirements are fully met (PASS), external Nebius cloud deployment and NVIDIA open-source model execution remain explicitly classified as **BLOCKED / NOT VERIFIED** due to unavailable cloud credentials (`BLK-04`) and endpoint parameter control constraints (`BLK-17`). A proposed model or provider path does not prove compliance; neither live Nebius cloud deployment nor live NVIDIA-model inference has been run or verified in this environment.
 
 ---
 
